@@ -6,12 +6,12 @@ import (
 	"strings"
 
 	"github.com/free5gc/aper"
-	"github.com/free5gc/n3iwf/internal/logger"
-	"github.com/free5gc/n3iwf/pkg/factory"
+	"github.com/free5gc/wagf/internal/logger"
+	"github.com/free5gc/wagf/pkg/context"
 	"github.com/free5gc/ngap/ngapType"
 )
 
-func PlmnIdToNgap(plmnId factory.PLMNID) (ngapPlmnId ngapType.PLMNIdentity) {
+func PlmnIdToNgap(plmnId context.PLMNID) (ngapPlmnId ngapType.PLMNIdentity) {
 	var hexString string
 	mcc := strings.Split(plmnId.Mcc, "")
 	mnc := strings.Split(plmnId.Mnc, "")
@@ -28,10 +28,10 @@ func PlmnIdToNgap(plmnId factory.PLMNID) (ngapPlmnId ngapType.PLMNIdentity) {
 	return
 }
 
-func N3iwfIdToNgap(n3iwfId uint16) (ngapN3iwfId *aper.BitString) {
-	ngapN3iwfId = new(aper.BitString)
-	ngapN3iwfId.Bytes = make([]byte, 2)
-	binary.BigEndian.PutUint16(ngapN3iwfId.Bytes, n3iwfId)
-	ngapN3iwfId.BitLength = 16
+func WagfIdToNgap(wagfId uint32) (ngapWagfId *aper.BitString) {
+	ngapWagfId = new(aper.BitString)
+	ngapWagfId.Bytes = make([]byte, 4)
+	binary.BigEndian.PutUint32(ngapWagfId.Bytes, wagfId)
+	ngapWagfId.BitLength = 32
 	return
 }

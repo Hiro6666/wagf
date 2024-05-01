@@ -1,46 +1,96 @@
 package logger
 
 import (
+	"os"
+	"time"
+
+	formatter "github.com/antonfisher/nested-logrus-formatter"
 	"github.com/sirupsen/logrus"
 
+	aperLogger "github.com/free5gc/aper/logger"
+	ngapLogger "github.com/free5gc/ngap/logger"
 	logger_util "github.com/free5gc/util/logger"
 )
 
+var log *logrus.Logger
+
 var (
-	Log      *logrus.Logger
-	NfLog    *logrus.Entry
-	MainLog  *logrus.Entry
-	InitLog  *logrus.Entry
-	CfgLog   *logrus.Entry
-	CtxLog   *logrus.Entry
-	GinLog   *logrus.Entry
-	NgapLog  *logrus.Entry
-	IKELog   *logrus.Entry
-	GTPLog   *logrus.Entry
-	NWuCPLog *logrus.Entry
-	NWuUPLog *logrus.Entry
-	RelayLog *logrus.Entry
-	UtilLog  *logrus.Entry
+	AppLog     *logrus.Entry
+	InitLog    *logrus.Entry
+	CfgLog     *logrus.Entry
+	ContextLog *logrus.Entry
+	NgapLog    *logrus.Entry
+	IKELog     *logrus.Entry
+	RadiusLog  *logrus.Entry
+	GTPLog     *logrus.Entry
+	NWtCPLog   *logrus.Entry
+	NWtUPLog   *logrus.Entry
+	RelayLog   *logrus.Entry
+	UtilLog    *logrus.Entry
+	DHCPLog    *logrus.Entry
 )
 
 func init() {
-	fieldsOrder := []string{
-		logger_util.FieldNF,
-		logger_util.FieldCategory,
+	log = logrus.New()
+	log.SetReportCaller(false)
+
+	log.Formatter = &formatter.Formatter{
+		TimestampFormat: time.RFC3339,
+		TrimMessages:    true,
+		NoFieldsSpace:   true,
+		HideKeys:        true,
+		FieldsOrder:     []string{"component", "category"},
 	}
 
-	Log = logger_util.New(fieldsOrder)
-	NfLog = Log.WithField(logger_util.FieldNF, "N3IWF")
-	MainLog = NfLog.WithField(logger_util.FieldCategory, "Main")
-	InitLog = NfLog.WithField(logger_util.FieldCategory, "Init")
-	CfgLog = NfLog.WithField(logger_util.FieldCategory, "CFG")
-	CtxLog = NfLog.WithField(logger_util.FieldCategory, "CTX")
-	GinLog = NfLog.WithField(logger_util.FieldCategory, "GIN")
-	NgapLog = NfLog.WithField(logger_util.FieldCategory, "NGAP")
-	IKELog = NfLog.WithField(logger_util.FieldCategory, "IKE")
-	GTPLog = NfLog.WithField(logger_util.FieldCategory, "GTP")
-	NWuCPLog = NfLog.WithField(logger_util.FieldCategory, "NWuCP")
-	NWuUPLog = NfLog.WithField(logger_util.FieldCategory, "NWuUP")
-	RelayLog = NfLog.WithField(logger_util.FieldCategory, "Relay")
-	UtilLog = NfLog.WithField(logger_util.FieldCategory, "Util")
+	AppLog = log.WithFields(logrus.Fields{"component": "wagf", "category": "App"})
+	InitLog = log.WithFields(logrus.Fields{"component": "wagf", "category": "Init"})
+	CfgLog = log.WithFields(logrus.Fields{"component": "wagf", "category": "CFG"})
+	ContextLog = log.WithFields(logrus.Fields{"component": "wagf", "category": "Context"})
+	NgapLog = log.WithFields(logrus.Fields{"component": "wagf", "category": "NGAP"})
+	IKELog = log.WithFields(logrus.Fields{"component": "wagf", "category": "IKE"})
+	RadiusLog = log.WithFields(logrus.Fields{"component": "wagf", "category": "Radius"})
+	GTPLog = log.WithFields(logrus.Fields{"component": "wagf", "category": "GTP"})
+	NWtCPLog = log.WithFields(logrus.Fields{"component": "wagf", "category": "NWtCP"})
+	NWtUPLog = log.WithFields(logrus.Fields{"component": "wagf", "category": "NWtUP"})
+	RelayLog = log.WithFields(logrus.Fields{"component": "wagf", "category": "Relay"})
+	UtilLog = log.WithFields(logrus.Fields{"component": "wagf", "category": "Util"})
+	DHCPLog = log.WithFields(logrus.Fields{"component": "wagf", "category": "DHCP"})
+}
+
+func LogFileHook(logNfPath string, log5gcPath string) error {
+	if fullPath, err := logger_util.CreateFree5gcLogFile(log5gcPath); err == nil {
+		if fullPath != "" {
+			free5gcLogHook, hookErr := logger_util.NewFileHook(fullPath, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0o666)
+			if hookErr != nil {
+				return hookErr
+			}
+			log.Hooks.Add(free5gcLogHook)
+			aperLogger.GetLogger().Hooks.Add(free5gcLogHook)
+			ngapLogger.GetLogger().Hooks.Add(free5gcLogHook)
+		}
+	} else {
+		return err
+	}
+
+	if fullPath, err := logger_util.CreateNfLogFile(logNfPath, "wagf.log"); err == nil {
+		selfLogHook, hookErr := logger_util.NewFileHook(fullPath, os.O_CREATE|os.O_APPEND|os.O_RDWR, 0o666)
+		if hookErr != nil {
+			return hookErr
+		}
+		log.Hooks.Add(selfLogHook)
+		aperLogger.GetLogger().Hooks.Add(selfLogHook)
+		ngapLogger.GetLogger().Hooks.Add(selfLogHook)
+	} else {
+		return err
+	}
+
+	return nil
+}
+
+func SetLogLevel(level logrus.Level) {
+	log.SetLevel(level)
+}
+
+func SetReportCaller(enable bool) {
+	log.SetReportCaller(enable)
 }

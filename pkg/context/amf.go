@@ -2,15 +2,15 @@ package context
 
 import (
 	"bytes"
-	"fmt"
+
+	"git.cs.nctu.edu.tw/calee/sctp"
 
 	"github.com/free5gc/aper"
 	"github.com/free5gc/ngap/ngapConvert"
 	"github.com/free5gc/ngap/ngapType"
-	"github.com/free5gc/sctp"
 )
 
-type N3IWFAMF struct {
+type WAGFAMF struct {
 	SCTPAddr              string
 	SCTPConn              *sctp.SCTPConn
 	AMFName               *ngapType.AMFName
@@ -21,7 +21,7 @@ type N3IWFAMF struct {
 	// Overload related
 	AMFOverloadContent *AMFOverloadContent
 	// Relative Context
-	N3iwfRanUeList map[int64]*N3IWFRanUe // ranUeNgapId as key
+	WagfUeList map[int64]*WAGFUe // ranUeNgapId as key
 }
 
 type AMFTNLAssociationItem struct {
@@ -43,52 +43,48 @@ type SliceOverloadItem struct {
 	TrafficInd *int64
 }
 
-func (amf *N3IWFAMF) init(sctpAddr string, conn *sctp.SCTPConn) {
+func (amf *WAGFAMF) init(sctpAddr string, conn *sctp.SCTPConn) {
 	amf.SCTPAddr = sctpAddr
 	amf.SCTPConn = conn
 	amf.AMFTNLAssociationList = make(map[string]*AMFTNLAssociationItem)
-	amf.N3iwfRanUeList = make(map[int64]*N3IWFRanUe)
+	amf.WagfUeList = make(map[int64]*WAGFUe)
 }
 
-func (amf *N3IWFAMF) FindUeByAmfUeNgapID(id int64) *N3IWFRanUe {
-	for _, ranUe := range amf.N3iwfRanUeList {
-		if ranUe.AmfUeNgapId == id {
-			return ranUe
+func (amf *WAGFAMF) FindUeByAmfUeNgapID(id int64) *WAGFUe {
+	for _, wagfUe := range amf.WagfUeList {
+		if wagfUe.AmfUeNgapId == id {
+			return wagfUe
 		}
 	}
 	return nil
 }
 
-func (amf *N3IWFAMF) RemoveAllRelatedUe() error {
-	for _, ranUe := range amf.N3iwfRanUeList {
-		if err := ranUe.Remove(); err != nil {
-			return fmt.Errorf("RemoveAllRelatedUe error : %+v", err)
-		}
+func (amf *WAGFAMF) RemoveAllRelatedUe() {
+	for _, ue := range amf.WagfUeList {
+		ue.Remove()
 	}
-	return nil
 }
 
-func (amf *N3IWFAMF) AddAMFTNLAssociationItem(info ngapType.CPTransportLayerInformation) *AMFTNLAssociationItem {
+func (amf *WAGFAMF) AddAMFTNLAssociationItem(info ngapType.CPTransportLayerInformation) *AMFTNLAssociationItem {
 	item := &AMFTNLAssociationItem{}
 	item.Ipv4, item.Ipv6 = ngapConvert.IPAddressToString(*info.EndpointIPAddress)
 	amf.AMFTNLAssociationList[item.Ipv4+item.Ipv6] = item
 	return item
 }
 
-func (amf *N3IWFAMF) FindAMFTNLAssociationItem(info ngapType.CPTransportLayerInformation) *AMFTNLAssociationItem {
+func (amf *WAGFAMF) FindAMFTNLAssociationItem(info ngapType.CPTransportLayerInformation) *AMFTNLAssociationItem {
 	v4, v6 := ngapConvert.IPAddressToString(*info.EndpointIPAddress)
 	return amf.AMFTNLAssociationList[v4+v6]
 }
 
-func (amf *N3IWFAMF) DeleteAMFTNLAssociationItem(info ngapType.CPTransportLayerInformation) {
+func (amf *WAGFAMF) DeleteAMFTNLAssociationItem(info ngapType.CPTransportLayerInformation) {
 	v4, v6 := ngapConvert.IPAddressToString(*info.EndpointIPAddress)
 	delete(amf.AMFTNLAssociationList, v4+v6)
 }
 
-func (amf *N3IWFAMF) StartOverload(
+func (amf *WAGFAMF) StartOverload(
 	resp *ngapType.OverloadResponse, trafloadInd *ngapType.TrafficLoadReductionIndication,
-	nssai *ngapType.OverloadStartNSSAIList,
-) *AMFOverloadContent {
+	nssai *ngapType.OverloadStartNSSAIList) *AMFOverloadContent {
 	if resp == nil && trafloadInd == nil && nssai == nil {
 		return nil
 	}
@@ -118,13 +114,13 @@ func (amf *N3IWFAMF) StartOverload(
 	return amf.AMFOverloadContent
 }
 
-func (amf *N3IWFAMF) StopOverload() {
+func (amf *WAGFAMF) StopOverload() {
 	amf.AMFOverloadContent = nil
 }
 
 // FindAvalibleAMFByCompareGUAMI compares the incoming GUAMI with AMF served GUAMI
 // and return if this AMF is avalible for UE
-func (amf *N3IWFAMF) FindAvalibleAMFByCompareGUAMI(ueSpecifiedGUAMI *ngapType.GUAMI) bool {
+func (amf *WAGFAMF) FindAvalibleAMFByCompareGUAMI(ueSpecifiedGUAMI *ngapType.GUAMI) bool {
 	for _, amfServedGUAMI := range amf.ServedGUAMIList.List {
 		codedAMFServedGUAMI, err := aper.MarshalWithParams(&amfServedGUAMI.GUAMI, "valueExt")
 		if err != nil {
@@ -142,7 +138,7 @@ func (amf *N3IWFAMF) FindAvalibleAMFByCompareGUAMI(ueSpecifiedGUAMI *ngapType.GU
 	return false
 }
 
-func (amf *N3IWFAMF) FindAvalibleAMFByCompareSelectedPLMNId(ueSpecifiedSelectedPLMNId *ngapType.PLMNIdentity) bool {
+func (amf *WAGFAMF) FindAvalibleAMFByCompareSelectedPLMNId(ueSpecifiedSelectedPLMNId *ngapType.PLMNIdentity) bool {
 	for _, amfServedPLMNId := range amf.PLMNSupportList.List {
 		if !bytes.Equal(amfServedPLMNId.PLMNIdentity.Value, ueSpecifiedSelectedPLMNId.Value) {
 			continue

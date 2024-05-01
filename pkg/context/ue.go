@@ -4,57 +4,57 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"crypto/hmac"
+	"crypto/sha256"
 
 	"github.com/vishvananda/netlink"
 	gtpv1 "github.com/wmnsk/go-gtp/gtpv1"
 
-	ike_message "github.com/free5gc/n3iwf/pkg/ike/message"
+	"encoding/hex"
+	"regexp"
+
+	"github.com/free5gc/nas/nasMessage"
+	"github.com/free5gc/nas/nasType"
+	"github.com/free5gc/nas/security"
 	"github.com/free5gc/ngap/ngapType"
+	"github.com/free5gc/openapi/models"
+	ike_message "github.com/free5gc/wagf/pkg/ike/message"
+	"github.com/free5gc/util/milenage"
+	"github.com/free5gc/util/ueauth"
+	"golang.org/x/net/ipv4"
 )
 
 const (
 	AmfUeNgapIdUnspecified int64 = 0xffffffffff
 )
 
-type N3IWFIkeUe struct {
+type RadiusSession struct {
+	CallingStationID string
+	State            uint8
+
+	// UE context
+	ThisUE *WAGFUe
+
+	// RADIUS Info
+	Auth  []byte
+	PktId uint8
+}
+
+type WAGFUe struct {
 	/* UE identity */
+	RanUeNgapId      int64
+	AmfUeNgapId      int64
+	IPAddrv4         string
+	IPAddrv6         string
+	PortNumber       int32
+	TWAPID           uint64
+	MaskedIMEISV     *ngapType.MaskedIMEISV // TS 38.413 9.3.1.54
+	Guti             string
 	IPSecInnerIP     net.IP
 	IPSecInnerIPAddr *net.IPAddr // Used to send UP packets to UE
 
-	/* IKE Security Association */
-	N3IWFIKESecurityAssociation   *IKESecurityAssociation
-	N3IWFChildSecurityAssociation map[uint32]*ChildSecurityAssociation // inbound SPI as key
-
-	/* Temporary Mapping of two SPIs */
-	// Exchange Message ID(including a SPI) and ChildSA(including a SPI)
-	// Mapping of Message ID of exchange in IKE and Child SA when creating new child SA
-	TemporaryExchangeMsgIDChildSAMapping map[uint32]*ChildSecurityAssociation // Message ID as a key
-
-	/* Security */
-	Kn3iwf []uint8 // 32 bytes (256 bits), value is from NGAP IE "Security Key"
-
-	/* NAS IKE Connection */
-	IKEConnection *UDPSocketInfo
-
-	// Length of PDU Session List
-	PduSessionListLen int
-}
-
-type N3IWFRanUe struct {
-	/* UE identity */
-	RanUeNgapId  int64
-	AmfUeNgapId  int64
-	IPAddrv4     string
-	IPAddrv6     string
-	PortNumber   int32
-	MaskedIMEISV *ngapType.MaskedIMEISV // TS 38.413 9.3.1.54
-	Guti         string
-
 	/* Relative Context */
-	AMF *N3IWFAMF
-
-	/* Security */
-	SecurityCapabilities *ngapType.UESecurityCapabilities // TS 38.413 9.3.1.86
+	AMF *WAGFAMF
 
 	/* PDU Session */
 	PduSessionList map[int64]*PDUSession // pduSessionId as key
@@ -64,17 +64,47 @@ type N3IWFRanUe struct {
 
 	/* Temporary cached NAS message */
 	// Used when NAS registration accept arrived before
-	// UE setup NAS TCP connection with N3IWF, and
+	// UE setup NAS TCP connection with wagf, and
 	// Forward pduSessionEstablishmentAccept to UE after
 	// UE send CREATE_CHILD_SA response
 	TemporaryCachedNASMessage []byte
 
-	/* NAS TCP Connection Established */
-	IsNASTCPConnEstablished         bool
-	IsNASTCPConnEstablishedComplete bool
+	/* Security */
+	Kwagf               []uint8                          // 32 bytes (256 bits), value is from NGAP IE "Security Key"
+	Ktwap               []uint8                          // 32 bytes (256 bits), value is computed from Kwagf
+	Ktipsec             []uint8                          // 32 bytes (256 bits), value is computed from Kwagf
+	SecurityCapabilities *ngapType.UESecurityCapabilities // TS 38.413 9.3.1.86
+	// Security Capability
+	CipheringAlg 		uint8
+	IntegrityAlg		uint8
+	ULCount				security.Count
+	DLCount				security.Count
+	KnasEnc				[16]uint8
+	KnasInt				[16]uint8
+	Kamf				[]uint8
+	AnType				models.AccessType
+	Supi				string
+	EAPSuccessID		uint8
 
+	/* IKE Security Association */
+	WAGFIKESecurityAssociation   *IKESecurityAssociation
+	WAGFChildSecurityAssociation map[uint32]*ChildSecurityAssociation // inbound SPI as key
+	SignallingIPsecSAEstablished  bool
+
+	// RADIUS Session
+	RadiusSession            *RadiusSession
+
+	/* Temporary Mapping of two SPIs */
+	// Exchange Message ID(including a SPI) and ChildSA(including a SPI)
+	// Mapping of Message ID of exchange in IKE and Child SA when creating new child SA
+	TemporaryExchangeMsgIDChildSAMapping map[uint32]*ChildSecurityAssociation // Message ID as a key
+
+	/* NAS IKE Connection */
+	IKEConnection *UDPSocketInfo
 	/* NAS TCP Connection */
 	TCPConnection net.Conn
+	// RADIUS Connection
+	RadiusConnection *UDPSocketInfo
 
 	/* Others */
 	Guami                            *ngapType.GUAMI
@@ -85,7 +115,8 @@ type N3IWFRanUe struct {
 	CoreNetworkAssistanceInformation *ngapType.CoreNetworkAssistanceInformation // TS 38.413 9.3.1.15
 	IMSVoiceSupported                int32
 	RRCEstablishmentCause            int16
-	PduSessionReleaseList            ngapType.PDUSessionResourceReleasedListRelRes
+	UserName                         string
+	UEIdentity                       *nasType.MobileIdentity5GS
 }
 
 type PDUSession struct {
@@ -105,7 +136,7 @@ type PDUSession struct {
 
 type PDUSessionSetupTemporaryData struct {
 	// Slice of unactivated PDU session
-	UnactivatedPDUSession []*PDUSession // PDUSession as content
+	UnactivatedPDUSession []int64 // PDUSessionID as content
 	// NGAPProcedureCode is used to identify which type of
 	// response shall be used
 	NGAPProcedureCode ngapType.ProcedureCode
@@ -114,16 +145,6 @@ type PDUSessionSetupTemporaryData struct {
 	FailedListCxtRes *ngapType.PDUSessionResourceFailedToSetupListCxtRes
 	SetupListSURes   *ngapType.PDUSessionResourceSetupListSURes
 	FailedListSURes  *ngapType.PDUSessionResourceFailedToSetupListSURes
-	// List of Error for failed setup PDUSessionID
-	FailedErrStr []EvtError // Error string as content
-	// Current Index of UnactivatedPDUSession
-	Index int
-}
-
-type IkeMsgTemporaryData struct {
-	SecurityAssociation      *ike_message.SecurityAssociation
-	TrafficSelectorInitiator *ike_message.TrafficSelectorInitiator
-	TrafficSelectorResponder *ike_message.TrafficSelectorResponder
 }
 
 type QosFlow struct {
@@ -179,47 +200,28 @@ type IKESecurityAssociation struct {
 	TrafficSelectorResponder *ike_message.TrafficSelectorResponder
 	LastEAPIdentifier        uint8
 
-	// UDP Connection
-	IKEConnection *UDPSocketInfo
-
 	// Authentication data
 	ResponderSignedOctets []byte
 	InitiatorSignedOctets []byte
 
 	// NAT detection
-	// If UEIsBehindNAT == true, N3IWF should enable NAT traversal and
+	// If UEIsBehindNAT == true, wagf should enable NAT traversal and
 	// TODO: should support dynamic updating network address (MOBIKE)
 	UEIsBehindNAT bool
-	// If N3IWFIsBehindNAT == true, N3IWF should send UDP keepalive periodically
-	N3IWFIsBehindNAT bool
+	// If WAGFIsBehindNAT == true, wagf should send UDP keepalive periodically
+	WAGFIsBehindNAT bool
 
-	// IKE UE context
-	IkeUE *N3IWFIkeUe
-
-	// Temporary store the receive ike message
-	TemporaryIkeMsg *IkeMsgTemporaryData
-
-	DPDReqRetransTimer *Timer // The time from sending the DPD request to receiving the response
-	CurrentRetryTimes  int32  // Accumulate the number of times the DPD response wasn't received
-	IKESAClosedCh      chan struct{}
-	IsUseDPD           bool
+	// UE context
+	ThisUE *WAGFUe
 }
-
-// Temporary State Data Args
-const (
-	ArgsUEUDPConn string = "UE UDP Socket Info"
-)
 
 type ChildSecurityAssociation struct {
 	// SPI
-	InboundSPI  uint32 // N3IWF Specify
+	InboundSPI  uint32 // wagf Specify
 	OutboundSPI uint32 // Non-3GPP UE Specify
 
 	// Associated XFRM interface
 	XfrmIface netlink.Link
-
-	XfrmStateList  []netlink.XfrmState
-	XfrmPolicyList []netlink.XfrmPolicy
 
 	// IP address
 	PeerPublicIPAddr  net.IP
@@ -241,113 +243,53 @@ type ChildSecurityAssociation struct {
 
 	// Encapsulate
 	EnableEncapsulate bool
-	N3IWFPort         int
+	WAGFPort         int
 	NATPort           int
 
 	// PDU Session IDs associated with this child SA
 	PDUSessionIds []int64
 
-	// IKE UE context
-	IkeUE *N3IWFIkeUe
+	// UE context
+	ThisUE *WAGFUe
 }
 
 type UDPSocketInfo struct {
 	Conn      *net.UDPConn
-	N3IWFAddr *net.UDPAddr
+	WAGFAddr *net.UDPAddr
 	UEAddr    *net.UDPAddr
 }
 
-func (ikeUe *N3IWFIkeUe) init() {
-	ikeUe.N3IWFChildSecurityAssociation = make(map[uint32]*ChildSecurityAssociation)
-	ikeUe.TemporaryExchangeMsgIDChildSAMapping = make(map[uint32]*ChildSecurityAssociation)
+func (ue *WAGFUe) init(ranUeNgapId int64) {
+	ue.RanUeNgapId = ranUeNgapId
+	ue.AmfUeNgapId = AmfUeNgapIdUnspecified
+	ue.PduSessionList = make(map[int64]*PDUSession)
+	ue.WAGFChildSecurityAssociation = make(map[uint32]*ChildSecurityAssociation)
+	ue.TemporaryExchangeMsgIDChildSAMapping = make(map[uint32]*ChildSecurityAssociation)
 }
 
-func (ranUe *N3IWFRanUe) init(ranUeNgapId int64) {
-	ranUe.RanUeNgapId = ranUeNgapId
-	ranUe.AmfUeNgapId = AmfUeNgapIdUnspecified
-	ranUe.PduSessionList = make(map[int64]*PDUSession)
-	ranUe.IsNASTCPConnEstablished = false
-	ranUe.IsNASTCPConnEstablishedComplete = false
-}
-
-func (ikeUe *N3IWFIkeUe) Remove() error {
-	if ikeUe.N3IWFIKESecurityAssociation.IsUseDPD {
-		ikeUe.N3IWFIKESecurityAssociation.IKESAClosedCh <- struct{}{}
-	}
-
-	// remove from IKE UE context
-	n3iwfSelf := N3IWFSelf()
-	n3iwfSelf.DeleteIKESecurityAssociation(ikeUe.N3IWFIKESecurityAssociation.LocalSPI)
-	n3iwfSelf.DeleteInternalUEIPAddr(ikeUe.IPSecInnerIP.String())
-
-	for _, childSA := range ikeUe.N3IWFChildSecurityAssociation {
-		if err := ikeUe.DeleteChildSA(childSA); err != nil {
-			return err
-		}
-	}
-	n3iwfSelf.DeleteIKEUe(ikeUe.N3IWFIKESecurityAssociation.LocalSPI)
-
-	return nil
-}
-
-func (ranUe *N3IWFRanUe) Remove() error {
+func (ue *WAGFUe) Remove() {
 	// remove from AMF context
-	ranUe.DetachAMF()
-
-	// remove from RAN UE context
-	n3iwfSelf := N3IWFSelf()
-	n3iwfSelf.DeleteRanUe(ranUe.RanUeNgapId)
-
-	for _, pduSession := range ranUe.PduSessionList {
-		n3iwfSelf.DeleteTEID(pduSession.GTPConnection.IncomingTEID)
+	ue.DetachAMF()
+	// remove from wagf context
+	wagfSelf := WAGFSelf()
+	wagfSelf.DeleteWagfUe(ue.RanUeNgapId)
+	wagfSelf.DeleteIKESecurityAssociation(ue.WAGFIKESecurityAssociation.LocalSPI)
+	wagfSelf.DeleteInternalUEIPAddr(ue.IPSecInnerIP.String())
+	for _, pduSession := range ue.PduSessionList {
+		wagfSelf.DeleteTEID(pduSession.GTPConnection.IncomingTEID)
 	}
-
-	if err := ranUe.TCPConnection.Close(); err != nil {
-		return fmt.Errorf("Stop nwucp server error : %+v", err)
-	}
-
-	return nil
 }
 
-func (ikeUe *N3IWFIkeUe) DeleteChildSA(childSA *ChildSecurityAssociation) error {
-	n3iwfSelf := N3IWFSelf()
-	iface := childSA.XfrmIface
-
-	// Delete child SA xfrmState
-	for _, xfrmState := range childSA.XfrmStateList {
-		if err := netlink.XfrmStateDel(&xfrmState); err != nil {
-			return fmt.Errorf("Delete xfrmstate error : %+v", err)
-		}
-	}
-	// Delete child SA xfrmPolicy
-	for _, xfrmPolicy := range childSA.XfrmPolicyList {
-		if err := netlink.XfrmPolicyDel(&xfrmPolicy); err != nil {
-			return fmt.Errorf("Delete xfrmPolicy error : %+v", err)
-		}
-	}
-
-	if iface == nil || iface.Attrs().Name == "xfrmi-default" {
-	} else if err := netlink.LinkDel(iface); err != nil {
-		return fmt.Errorf("Delete interface %s fail: %+v", iface.Attrs().Name, err)
-	} else {
-		n3iwfSelf.XfrmIfaces.Delete(uint32(childSA.XfrmStateList[0].Ifid))
-	}
-
-	delete(ikeUe.N3IWFChildSecurityAssociation, childSA.InboundSPI)
-
-	return nil
-}
-
-func (ranUe *N3IWFRanUe) FindPDUSession(pduSessionID int64) *PDUSession {
-	if pduSession, ok := ranUe.PduSessionList[pduSessionID]; ok {
+func (ue *WAGFUe) FindPDUSession(pduSessionID int64) *PDUSession {
+	if pduSession, ok := ue.PduSessionList[pduSessionID]; ok {
 		return pduSession
 	} else {
 		return nil
 	}
 }
 
-func (ranUe *N3IWFRanUe) CreatePDUSession(pduSessionID int64, snssai ngapType.SNSSAI) (*PDUSession, error) {
-	if _, exists := ranUe.PduSessionList[pduSessionID]; exists {
+func (ue *WAGFUe) CreatePDUSession(pduSessionID int64, snssai ngapType.SNSSAI) (*PDUSession, error) {
+	if _, exists := ue.PduSessionList[pduSessionID]; exists {
 		return nil, fmt.Errorf("PDU Session[ID:%d] is already exists", pduSessionID)
 	}
 	pduSession := &PDUSession{
@@ -355,33 +297,32 @@ func (ranUe *N3IWFRanUe) CreatePDUSession(pduSessionID int64, snssai ngapType.SN
 		Snssai:   snssai,
 		QosFlows: make(map[int64]*QosFlow),
 	}
-	ranUe.PduSessionList[pduSessionID] = pduSession
+	ue.PduSessionList[pduSessionID] = pduSession
 	return pduSession, nil
 }
 
-// When N3IWF send CREATE_CHILD_SA request to N3UE, the inbound SPI of childSA will be only stored first until
+// When wagf send CREATE_CHILD_SA request to N5CW, the inbound SPI of childSA will be only stored first until
 // receive response and call CompleteChildSAWithProposal to fill the all data of childSA
-func (ikeUe *N3IWFIkeUe) CreateHalfChildSA(msgID, inboundSPI uint32, pduSessionID int64) {
+func (ue *WAGFUe) CreateHalfChildSA(msgID, inboundSPI uint32, pduSessionID int64) {
 	childSA := new(ChildSecurityAssociation)
 	childSA.InboundSPI = inboundSPI
 	childSA.PDUSessionIds = append(childSA.PDUSessionIds, pduSessionID)
 	// Link UE context
-	childSA.IkeUE = ikeUe
+	childSA.ThisUE = ue
 	// Map Exchange Message ID and Child SA data until get paired response
-	ikeUe.TemporaryExchangeMsgIDChildSAMapping[msgID] = childSA
+	ue.TemporaryExchangeMsgIDChildSAMapping[msgID] = childSA
 }
 
-func (ikeUe *N3IWFIkeUe) CompleteChildSA(msgID uint32, outboundSPI uint32,
-	chosenSecurityAssociation *ike_message.SecurityAssociation,
-) (*ChildSecurityAssociation, error) {
-	childSA, ok := ikeUe.TemporaryExchangeMsgIDChildSAMapping[msgID]
+func (ue *WAGFUe) CompleteChildSA(msgID uint32, outboundSPI uint32,
+	chosenSecurityAssociation *ike_message.SecurityAssociation) (*ChildSecurityAssociation, error) {
+	childSA, ok := ue.TemporaryExchangeMsgIDChildSAMapping[msgID]
 
 	if !ok {
 		return nil, fmt.Errorf("There's not a half child SA created by the exchange with message ID %d.", msgID)
 	}
 
 	// Remove mapping of exchange msg ID and child SA
-	delete(ikeUe.TemporaryExchangeMsgIDChildSAMapping, msgID)
+	delete(ue.TemporaryExchangeMsgIDChildSAMapping, msgID)
 
 	if chosenSecurityAssociation == nil {
 		return nil, errors.New("chosenSecurityAssociation is nil")
@@ -408,26 +349,322 @@ func (ikeUe *N3IWFIkeUe) CompleteChildSA(msgID uint32, outboundSPI uint32,
 	}
 
 	// Record to UE context with inbound SPI as key
-	ikeUe.N3IWFChildSecurityAssociation[childSA.InboundSPI] = childSA
-	// Record to N3IWF context with inbound SPI as key
-	n3iwfContext.ChildSA.Store(childSA.InboundSPI, childSA)
+	ue.WAGFChildSecurityAssociation[childSA.InboundSPI] = childSA
+	// Record to wagf context with inbound SPI as key
+	wagfContext.ChildSA.Store(childSA.InboundSPI, childSA)
 
 	return childSA, nil
 }
 
-func (ranUe *N3IWFRanUe) AttachAMF(sctpAddr string) bool {
-	if amf, ok := n3iwfContext.AMFPoolLoad(sctpAddr); ok {
-		amf.N3iwfRanUeList[ranUe.RanUeNgapId] = ranUe
-		ranUe.AMF = amf
+func (ue *WAGFUe) AttachAMF(sctpAddr string) bool {
+	if amf, ok := wagfContext.AMFPoolLoad(sctpAddr); ok {
+		amf.WagfUeList[ue.RanUeNgapId] = ue
+		ue.AMF = amf
 		return true
 	} else {
 		return false
 	}
 }
 
-func (ranUe *N3IWFRanUe) DetachAMF() {
-	if ranUe.AMF == nil {
+func (ue *WAGFUe) DetachAMF() {
+	if ue.AMF == nil {
 		return
 	}
-	delete(ranUe.AMF.N3iwfRanUeList, ranUe.RanUeNgapId)
+	delete(ue.AMF.WagfUeList, ue.RanUeNgapId)
 }
+
+func CalculateIpv4HeaderChecksum(hdr *ipv4.Header) uint32 {
+	var Checksum uint32
+	Checksum += uint32((hdr.Version<<4|(20>>2&0x0f))<<8 | hdr.TOS)
+	Checksum += uint32(hdr.TotalLen)
+	Checksum += uint32(hdr.ID)
+	Checksum += uint32((hdr.FragOff & 0x1fff) | (int(hdr.Flags) << 13))
+	Checksum += uint32((hdr.TTL << 8) | (hdr.Protocol))
+
+	src := hdr.Src.To4()
+	Checksum += uint32(src[0])<<8 | uint32(src[1])
+	Checksum += uint32(src[2])<<8 | uint32(src[3])
+	dst := hdr.Dst.To4()
+	Checksum += uint32(dst[0])<<8 | uint32(dst[1])
+	Checksum += uint32(dst[2])<<8 | uint32(dst[3])
+	return ^(Checksum&0xffff0000>>16 + Checksum&0xffff)
+}
+
+func (ue *WAGFUe) GetAuthSubscription() (authSubs models.AuthenticationSubscription) {
+	var wagfSelf *WAGFContext = WAGFSelf()
+	authSubs.PermanentKey = &models.PermanentKey{
+		PermanentKeyValue: wagfSelf.N5CWInfo.Security.K,
+	}
+	authSubs.Opc = &models.Opc{
+		OpcValue: wagfSelf.N5CWInfo.Security.OPC,
+	}
+	authSubs.Milenage = &models.Milenage{
+		Op: &models.Op{
+			OpValue: wagfSelf.N5CWInfo.Security.OP,
+		},
+	}
+	authSubs.AuthenticationManagementField = wagfSelf.N5CWInfo.Security.AMF
+
+	authSubs.SequenceNumber = wagfSelf.N5CWInfo.Security.SQN
+	authSubs.AuthenticationMethod = models.AuthMethod_EAP_AKA_PRIME
+	return
+}
+
+func (ue *WAGFUe) DeriveResEAPMessageAndSetKey(
+	authSubs models.AuthenticationSubscription, eAPMessage []byte, rand []byte, snName string, autn []byte) []byte {
+
+	sqn, err := hex.DecodeString(authSubs.SequenceNumber)
+	if err != nil {
+		fmt.Printf("DecodeString error: %+v", err)
+	}
+
+	amf, err := hex.DecodeString(authSubs.AuthenticationManagementField)
+	if err != nil {
+		fmt.Printf("DecodeString error: %+v", err)
+	}
+
+	// Run milenage
+	macA, macS := make([]byte, 8), make([]byte, 8)
+	ck, ik := make([]byte, 16), make([]byte, 16)
+	res := make([]byte, 8)
+	ak, akStar := make([]byte, 6), make([]byte, 6)
+
+	opc := make([]byte, 16)
+	_ = opc
+	k, err := hex.DecodeString(authSubs.PermanentKey.PermanentKeyValue)
+	if err != nil {
+		fmt.Printf("DecodeString error: %+v", err)
+	}
+
+	if authSubs.Opc.OpcValue == "" {
+		opStr := authSubs.Milenage.Op.OpValue
+		var op []byte
+		op, err = hex.DecodeString(opStr)
+		if err != nil {
+			fmt.Printf("DecodeString error: %+v", err)
+		}
+
+		opc, err = milenage.GenerateOPC(k, op)
+		if err != nil {
+			fmt.Printf("milenage GenerateOPC error: %+v", err)
+		}
+	} else {
+		opc, err = hex.DecodeString(authSubs.Opc.OpcValue)
+		if err != nil {
+			fmt.Printf("DecodeString error: %+v", err)
+		}
+	}
+	fmt.Println("in wagf ue k, opc, rand, amf", k, opc, rand, amf)
+	// Generate MAC_A, MAC_S
+	err = milenage.F1(opc, k, rand, sqn, amf, macA, macS)
+	if err != nil {
+		fmt.Printf("regexp Compile error: %+v", err)
+	}
+
+	// Generate RES, CK, IK, AK, AKstar
+	err = milenage.F2345(opc, k, rand, res, ck, ik, ak, akStar)
+	if err != nil {
+		fmt.Printf("regexp Compile error: %+v", err)
+	}
+
+	// derive CK' IK'
+	key := append(ck, ik...)
+	FC := ueauth.FC_FOR_CK_PRIME_IK_PRIME_DERIVATION
+	P0 := []byte(snName)
+	P1 := autn[:6]
+	kdfVal, err := ueauth.GetKDFValue(key, FC, P0, ueauth.KDFLen(P0), P1, ueauth.KDFLen(P1))
+	if err != nil {
+		fmt.Printf("GetKDFValue error: %+v", err)
+	}
+	ckPrime := kdfVal[:len(kdfVal)/2]
+	ikPrime := kdfVal[len(kdfVal)/2:]
+
+	// derive Kaut Kausf Kseaf
+	key = append(ikPrime, ckPrime...)
+	// omit "imsi-" part in supi
+	sBase := []byte("EAP-AKA'" + ue.Supi[5:])
+	var MK, prev []byte
+	prfRounds := 208/32 + 1
+	for i := 0; i < prfRounds; i++ {
+		// Create a new HMAC by defining the hash type and the key (as byte array)
+		h := hmac.New(sha256.New, key)
+
+		hexNum := (byte)(i + 1)
+		ap := append(sBase, hexNum)
+		s := append(prev, ap...)
+
+		// Write Data to it
+		if _, err = h.Write(s); err != nil {
+			fmt.Printf("EAP-AKA' prf error: %+v", err)
+		}
+
+		// Get result
+		sha := h.Sum(nil)
+		MK = append(MK, sha...)
+		prev = sha
+	}
+	Kaut := MK[16:48]
+	Kausf := MK[144:176]
+	P0 = []byte(snName)
+	Kseaf, err := ueauth.GetKDFValue(Kausf, ueauth.FC_FOR_KSEAF_DERIVATION, P0, ueauth.KDFLen(P0))
+	if err != nil {
+		fmt.Printf("GetKDFValue error: %+v", err)
+	}
+
+	// fill response EAP packet
+	resEAPMessage := make([]byte, 40)
+	copy(resEAPMessage, eAPMessage[:8])
+	resEAPMessage[0] = 2
+	resEAPMessage[2] = 0
+	resEAPMessage[3] = 40
+	resEAPMessage[8] = 3 // AT_RES
+	resEAPMessage[9] = 3
+	resEAPMessage[11] = 64
+	copy(resEAPMessage[12:20], res[:])
+	resEAPMessage[20] = 11 // AT_MAC
+	resEAPMessage[21] = 5
+
+	// calculate MAC
+	h := hmac.New(sha256.New, Kaut)
+	if _, err = h.Write(resEAPMessage); err != nil {
+		fmt.Printf("MAC calculate error: %+v", err)
+	}
+	sum := h.Sum(nil)
+	copy(resEAPMessage[24:], sum[:16])
+
+	// derive Kamf
+	supiRegexp, err := regexp.Compile("(?:imsi|supi)-([0-9]{5,15})")
+	if err != nil {
+		fmt.Printf("regexp Compile error: %+v", err)
+	}
+	groups := supiRegexp.FindStringSubmatch(ue.Supi)
+
+	fmt.Println("in wagf supi", ue.Supi)
+
+	P0 = []byte(groups[1])
+	L0 := ueauth.KDFLen(P0)
+	P1 = []byte{0x00, 0x00}
+	L1 := ueauth.KDFLen(P1)
+
+	ue.Kamf, err = ueauth.GetKDFValue(Kseaf, ueauth.FC_FOR_KAMF_DERIVATION, P0, L0, P1, L1)
+	if err != nil {
+		fmt.Printf("GetKDFValue error: %+v", err)
+	}
+
+	ue.DerivateAlgKey()
+	return resEAPMessage
+
+}
+
+func (ue *WAGFUe) DerivateKamf(key []byte, snName string, SQN, AK []byte) {
+
+	FC := ueauth.FC_FOR_KAUSF_DERIVATION
+	P0 := []byte(snName)
+	SQNxorAK := make([]byte, 6)
+	for i := 0; i < len(SQN); i++ {
+		SQNxorAK[i] = SQN[i] ^ AK[i]
+	}
+	P1 := SQNxorAK
+	Kausf, err := ueauth.GetKDFValue(key, FC, P0, ueauth.KDFLen(P0), P1, ueauth.KDFLen(P1))
+	if err != nil {
+		fmt.Printf("GetKDFValue error: %+v", err)
+	}
+	P0 = []byte(snName)
+	Kseaf, err := ueauth.GetKDFValue(Kausf, ueauth.FC_FOR_KSEAF_DERIVATION, P0, ueauth.KDFLen(P0))
+	if err != nil {
+		fmt.Printf("GetKDFValue error: %+v", err)
+	}
+
+	supiRegexp, err := regexp.Compile("(?:imsi|supi)-([0-9]{5,15})")
+	if err != nil {
+		fmt.Printf("regexp Compile error: %+v", err)
+	}
+	groups := supiRegexp.FindStringSubmatch(ue.Supi)
+
+	P0 = []byte(groups[1])
+	L0 := ueauth.KDFLen(P0)
+	P1 = []byte{0x00, 0x00}
+	L1 := ueauth.KDFLen(P1)
+
+	ue.Kamf, err = ueauth.GetKDFValue(Kseaf, ueauth.FC_FOR_KAMF_DERIVATION, P0, L0, P1, L1)
+	if err != nil {
+		fmt.Printf("GetKDFValue error: %+v", err)
+	}
+}
+
+// Algorithm key Derivation function defined in TS 33.501 Annex A.9
+func (ue *WAGFUe) DerivateAlgKey() {
+	// Security Key
+	P0 := []byte{security.NNASEncAlg}
+	L0 := ueauth.KDFLen(P0)
+	P1 := []byte{ue.CipheringAlg}
+	L1 := ueauth.KDFLen(P1)
+
+	kenc, err := ueauth.GetKDFValue(ue.Kamf, ueauth.FC_FOR_ALGORITHM_KEY_DERIVATION, P0, L0, P1, L1)
+	if err != nil {
+		fmt.Printf("GetKDFValue error: %+v", err)
+	}
+	copy(ue.KnasEnc[:], kenc[16:32])
+
+	// Integrity Key
+	P0 = []byte{security.NNASIntAlg}
+	L0 = ueauth.KDFLen(P0)
+	P1 = []byte{ue.IntegrityAlg}
+	L1 = ueauth.KDFLen(P1)
+
+	kint, err := ueauth.GetKDFValue(ue.Kamf, ueauth.FC_FOR_ALGORITHM_KEY_DERIVATION, P0, L0, P1, L1)
+	if err != nil {
+		fmt.Printf("GetKDFValue error: %+v", err)
+	}
+	copy(ue.KnasInt[:], kint[16:32])
+}
+
+func (ue *WAGFUe) GetUESecurityCapability() (UESecurityCapability *nasType.UESecurityCapability) {
+	UESecurityCapability = &nasType.UESecurityCapability{
+		Iei:    nasMessage.RegistrationRequestUESecurityCapabilityType,
+		Len:    2,
+		Buffer: []uint8{0x00, 0x00},
+	}
+	switch ue.CipheringAlg {
+	case security.AlgCiphering128NEA0:
+		UESecurityCapability.SetEA0_5G(1)
+	case security.AlgCiphering128NEA1:
+		UESecurityCapability.SetEA1_128_5G(1)
+	case security.AlgCiphering128NEA2:
+		UESecurityCapability.SetEA2_128_5G(1)
+	case security.AlgCiphering128NEA3:
+		UESecurityCapability.SetEA3_128_5G(1)
+	}
+
+	switch ue.IntegrityAlg {
+	case security.AlgIntegrity128NIA0:
+		UESecurityCapability.SetIA0_5G(1)
+	case security.AlgIntegrity128NIA1:
+		UESecurityCapability.SetIA1_128_5G(1)
+	case security.AlgIntegrity128NIA2:
+		UESecurityCapability.SetIA2_128_5G(1)
+	case security.AlgIntegrity128NIA3:
+		UESecurityCapability.SetIA3_128_5G(1)
+	}
+
+	return
+}
+
+func (ue *WAGFUe) Get5GMMCapability() (capability5GMM *nasType.Capability5GMM) {
+	return &nasType.Capability5GMM{
+		Iei:   nasMessage.RegistrationRequestCapability5GMMType,
+		Len:   1,
+		Octet: [13]uint8{0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+	}
+}
+
+func (ue *WAGFUe) GetBearerType() uint8 {
+	if ue.AnType == models.AccessType__3_GPP_ACCESS {
+		return security.Bearer3GPP
+	} else if ue.AnType == models.AccessType_NON_3_GPP_ACCESS {
+		return security.BearerNon3GPP
+	} else {
+		return security.OnlyOneBearer
+	}
+}
+

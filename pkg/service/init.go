@@ -1,199 +1,297 @@
 package service
 
 import (
-	"context"
+	"bufio"
 	"fmt"
-	"io/ioutil"
 	"net"
 	"os"
+	"os/exec"
 	"os/signal"
 	"runtime/debug"
+	"sync"
 	"syscall"
+	"time"
 
 	"github.com/sirupsen/logrus"
+	"github.com/urfave/cli"
 	"github.com/vishvananda/netlink"
 
-	"github.com/free5gc/n3iwf/internal/logger"
-	ngap_service "github.com/free5gc/n3iwf/internal/ngap/service"
-	nwucp_service "github.com/free5gc/n3iwf/internal/nwucp/service"
-	nwuup_service "github.com/free5gc/n3iwf/internal/nwuup/service"
-	n3iwf_context "github.com/free5gc/n3iwf/pkg/context"
-	"github.com/free5gc/n3iwf/pkg/factory"
-	ike_service "github.com/free5gc/n3iwf/pkg/ike/service"
-	"github.com/free5gc/n3iwf/pkg/ike/xfrm"
+	aperLogger "github.com/free5gc/aper/logger"
+	ngapLogger "github.com/free5gc/ngap/logger"
+	"github.com/free5gc/wagf/internal/logger"
+	ngap_service "github.com/free5gc/wagf/internal/ngap/service"
+	nwtcp_service "github.com/free5gc/wagf/internal/nwtcp/service"
+	nwtup_service "github.com/free5gc/wagf/internal/nwtup/service"
+	"github.com/free5gc/wagf/internal/util"
+	"github.com/free5gc/wagf/pkg/context"
+	"github.com/free5gc/wagf/pkg/factory"
+	ike_service "github.com/free5gc/wagf/pkg/ike/service"
+	"github.com/free5gc/wagf/pkg/ike/xfrm"
+	radius_service "github.com/free5gc/wagf/pkg/radius/service"
+	dhcp_service "github.com/free5gc/wagf/pkg/dhcp/service"
 )
 
-type N3iwfApp struct {
-	cfg      *factory.Config
-	n3iwfCtx *n3iwf_context.N3IWFContext
+type wagf struct{}
+
+type (
+	// Commands information.
+	Commands struct {
+		config string
+	}
+)
+
+var commands Commands
+
+var cliCmd = []cli.Flag{
+	cli.StringFlag{
+		Name:  "config, c",
+		Usage: "Load configuration from `FILE`",
+	},
+	cli.StringFlag{
+		Name:  "log, l",
+		Usage: "Output NF log to `FILE`",
+	},
+	cli.StringFlag{
+		Name:  "log5gc, lc",
+		Usage: "Output free5gc log to `FILE`",
+	},
 }
 
-func NewApp(cfg *factory.Config) (*N3iwfApp, error) {
-	n3iwf := &N3iwfApp{cfg: cfg}
-	n3iwf.SetLogEnable(cfg.GetLogEnable())
-	n3iwf.SetLogLevel(cfg.GetLogLevel())
-	n3iwf.SetReportCaller(cfg.GetLogReportCaller())
-
-	// n3iwf_context.Init()
-	n3iwf.n3iwfCtx = n3iwf_context.N3IWFSelf()
-	return n3iwf, nil
+func (*wagf) GetCliCmd() (flags []cli.Flag) {
+	return cliCmd
 }
 
-func (a *N3iwfApp) SetLogEnable(enable bool) {
-	logger.MainLog.Infof("Log enable is set to [%v]", enable)
-	if enable && logger.Log.Out == os.Stderr {
-		return
-	} else if !enable && logger.Log.Out == ioutil.Discard {
+func (wagf *wagf) Initialize(c *cli.Context) error {
+	commands = Commands{
+		config: c.String("config"),
+	}
+
+	// if cmd line params contain 'config', then go to InitConfigFactory
+	if commands.config != "" {
+		if err := factory.InitConfigFactory(commands.config); err != nil {
+			return err
+		}
+	} else { // if cmd line params doesn't contain 'config', then use default config path = './config/wagfcfg.yaml'
+		if err := factory.InitConfigFactory(util.WagfDefaultConfigPath); err != nil {
+			return err
+		}
+	}
+
+	wagf.SetLogLevel()
+
+	if err := factory.CheckConfigVersion(); err != nil {
+		return err
+	}
+
+	// verify config file validation
+	if _, err := factory.WagfConfig.Validate(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// set log level
+// DebugLevel: how detailed to output, value: trace, debug, info, warn, error, fatal, panic
+// ReportCaller: enable the caller report or not, value: true or false
+func (wagf *wagf) SetLogLevel() {
+	if factory.WagfConfig.Logger == nil {
+		logger.InitLog.Warnln("wagf config without log level setting!!!")
 		return
 	}
 
-	a.cfg.SetLogEnable(enable)
-	if enable {
-		logger.Log.SetOutput(os.Stderr)
-	} else {
-		logger.Log.SetOutput(ioutil.Discard)
+	if factory.WagfConfig.Logger.wagf != nil {
+		// Set DebugLevel, default: infolevel
+		if factory.WagfConfig.Logger.wagf.DebugLevel != "" {
+			if level, err := logrus.ParseLevel(factory.WagfConfig.Logger.wagf.DebugLevel); err != nil {
+				logger.InitLog.Warnf("wagf Log level [%s] is invalid, set to [info] level",
+					factory.WagfConfig.Logger.wagf.DebugLevel)
+				logger.SetLogLevel(logrus.InfoLevel)
+			} else {
+				logger.InitLog.Infof("wagf Log level is set to [%s] level", level)
+				logger.SetLogLevel(level)
+			}
+		} else {
+			logger.InitLog.Infoln("wagf Log level is default set to [info] level")
+			logger.SetLogLevel(logrus.InfoLevel)
+		}
+		// Set report caller
+		logger.SetReportCaller(factory.WagfConfig.Logger.wagf.ReportCaller)
+	}
+
+	if factory.WagfConfig.Logger.NGAP != nil {
+		if factory.WagfConfig.Logger.NGAP.DebugLevel != "" {
+			if level, err := logrus.ParseLevel(factory.WagfConfig.Logger.NGAP.DebugLevel); err != nil {
+				ngapLogger.NgapLog.Warnf("NGAP Log level [%s] is invalid, set to [info] level",
+					factory.WagfConfig.Logger.NGAP.DebugLevel)
+				ngapLogger.SetLogLevel(logrus.InfoLevel)
+			} else {
+				ngapLogger.SetLogLevel(level)
+			}
+		} else {
+			ngapLogger.NgapLog.Warnln("NGAP Log level not set. Default set to [info] level")
+			ngapLogger.SetLogLevel(logrus.InfoLevel)
+		}
+		ngapLogger.SetReportCaller(factory.WagfConfig.Logger.NGAP.ReportCaller)
+	}
+
+	if factory.WagfConfig.Logger.Aper != nil {
+		if factory.WagfConfig.Logger.Aper.DebugLevel != "" {
+			if level, err := logrus.ParseLevel(factory.WagfConfig.Logger.Aper.DebugLevel); err != nil {
+				aperLogger.AperLog.Warnf("Aper Log level [%s] is invalid, set to [info] level",
+					factory.WagfConfig.Logger.Aper.DebugLevel)
+				aperLogger.SetLogLevel(logrus.InfoLevel)
+			} else {
+				aperLogger.SetLogLevel(level)
+			}
+		} else {
+			aperLogger.AperLog.Warnln("Aper Log level not set. Default set to [info] level")
+			aperLogger.SetLogLevel(logrus.InfoLevel)
+		}
+		aperLogger.SetReportCaller(factory.WagfConfig.Logger.Aper.ReportCaller)
 	}
 }
 
-func (a *N3iwfApp) SetLogLevel(level string) {
-	lvl, err := logrus.ParseLevel(level)
-	if err != nil {
-		logger.MainLog.Warnf("Log level [%s] is invalid", level)
-		return
-	}
+func (wagf *wagf) FilterCli(c *cli.Context) (args []string) {
+	for _, flag := range wagf.GetCliCmd() {
+		name := flag.GetName()
+		value := fmt.Sprint(c.Generic(name))
+		if value == "" {
+			continue
+		}
 
-	logger.MainLog.Infof("Log level is set to [%s]", level)
-	if lvl == logger.Log.GetLevel() {
-		return
+		args = append(args, "--"+name, value)
 	}
-
-	a.cfg.SetLogLevel(level)
-	logger.Log.SetLevel(lvl)
+	return args
 }
 
-func (a *N3iwfApp) SetReportCaller(reportCaller bool) {
-	logger.MainLog.Infof("Report Caller is set to [%v]", reportCaller)
-	if reportCaller == logger.Log.ReportCaller {
-		return
-	}
-
-	a.cfg.SetLogReportCaller(reportCaller)
-	logger.Log.SetReportCaller(reportCaller)
-}
-
-func (a *N3iwfApp) Start(tlsKeyLogPath string) {
+func (wagf *wagf) Start() {
 	logger.InitLog.Infoln("Server started")
 
-	var cancel context.CancelFunc
-	n3iwfContext := n3iwf_context.N3IWFSelf()
-	n3iwfContext.Ctx, cancel = context.WithCancel(context.Background())
-	defer cancel()
-
-	if !n3iwf_context.InitN3IWFContext() {
+	// set wagf basic info
+	if !util.InitWAGFContext() {
 		logger.InitLog.Error("Initicating context failed")
 		return
 	}
 
-	if err := a.InitDefaultXfrmInterface(n3iwfContext); err != nil {
+	// create XFRM interface
+	if err := wagf.InitDefaultXfrmInterface(); err != nil {
 		logger.InitLog.Errorf("Initicating XFRM interface for control plane failed: %+v", err)
 		return
 	}
 
-	n3iwfContext.Wg.Add(1)
 	// Graceful Shutdown
-	go a.ListenShutdownEvent(n3iwfContext)
+	signalChannel := make(chan os.Signal, 1)
+	signal.Notify(signalChannel, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		defer func() {
+			if p := recover(); p != nil {
+				// Print stack for panic to log. Fatalf() will let program exit.
+				logger.InitLog.Fatalf("panic: %v\n%s", p, string(debug.Stack()))
+			}
+		}()
+
+		<-signalChannel // if receive os.Interrupt, syscall.SIGTERM, wagf terminate
+		wagf.Terminate()
+		// Waiting for negotiatioon with netlink for deleting interfaces
+		time.Sleep(2 * time.Second)
+		os.Exit(0)
+	}()
+
+	wg := sync.WaitGroup{}
 
 	// NGAP
-	if err := ngap_service.Run(&n3iwfContext.Wg); err != nil {
+	if err := ngap_service.Run(); err != nil {
 		logger.InitLog.Errorf("Start NGAP service failed: %+v", err)
 		return
 	}
 	logger.InitLog.Info("NGAP service running.")
+	wg.Add(1)
 
 	// Relay listeners
 	// Control plane
-	if err := nwucp_service.Run(&n3iwfContext.Wg); err != nil {
-		logger.InitLog.Errorf("Listen NWu control plane traffic failed: %+v", err)
+	if err := nwtcp_service.Run(); err != nil {
+		logger.InitLog.Errorf("Listen NWt control plane traffic failed: %+v", err)
 		return
 	}
 	logger.InitLog.Info("NAS TCP server successfully started.")
+	wg.Add(1)
 
 	// User plane
-	if err := nwuup_service.Run(&n3iwfContext.Wg); err != nil {
-		logger.InitLog.Errorf("Listen NWu user plane traffic failed: %+v", err)
+	if err := nwtup_service.Run(); err != nil {
+		logger.InitLog.Errorf("Listen NWt user plane traffic failed: %+v", err)
 		return
 	}
-	logger.InitLog.Info("Listening NWu user plane traffic")
+	logger.InitLog.Info("Listening NWt user plane traffic")
+	wg.Add(1)
 
 	// IKE
-	if err := ike_service.Run(&n3iwfContext.Wg); err != nil {
+	if err := ike_service.Run(); err != nil {
 		logger.InitLog.Errorf("Start IKE service failed: %+v", err)
 		return
 	}
 	logger.InitLog.Info("IKE service running.")
+	wg.Add(1)
 
-	logger.InitLog.Info("N3IWF running...")
+	// Radius
+	if err := radius_service.Run(); err != nil {
+		logger.InitLog.Errorf("Start Radius service failed: %+v", err)
+		return
+	}
+	logger.InitLog.Info("Radius service running.")
+	wg.Add(1)
 
-	signalChannel := make(chan os.Signal, 1)
-	signal.Notify(signalChannel, os.Interrupt, syscall.SIGTERM)
-	<-signalChannel
+	// DHCP
+	if err := dhcp_service.Run(); err != nil {
+		logger.InitLog.Errorf("Start DHCP service failed: %+v", err)
+		return
+	}
+	logger.InitLog.Info("DHCP service running.")
+	wg.Add(1)
 
-	cancel()
-	a.WaitRoutineStopped(n3iwfContext)
+	logger.InitLog.Info("wagf running...")
+
+	wg.Wait()
 }
 
-func (a *N3iwfApp) ListenShutdownEvent(n3iwfContext *n3iwf_context.N3IWFContext) {
-	defer func() {
-		if p := recover(); p != nil {
-			// Print stack for panic to log. Fatalf() will let program exit.
-			logger.InitLog.Fatalf("panic: %v\n%s", p, string(debug.Stack()))
-		}
-		n3iwfContext.Wg.Done()
-	}()
+func (wagf *wagf) InitDefaultXfrmInterface() error {
+	wagfContext := context.WAGFSelf()
+	fmt.Println("in my init.go wagfContext", &wagfContext)
 
-	<-n3iwfContext.Ctx.Done()
-	StopServiceConn(n3iwfContext)
-}
-
-func (a *N3iwfApp) WaitRoutineStopped(n3iwfContext *n3iwf_context.N3IWFContext) {
-	n3iwfContext.Wg.Wait()
-	// Waiting for negotiatioon with netlink for deleting interfaces
-	a.Terminate(n3iwfContext)
-}
-
-func (a *N3iwfApp) InitDefaultXfrmInterface(n3iwfContext *n3iwf_context.N3IWFContext) error {
 	// Setup default IPsec interface for Control Plane
 	var linkIPSec netlink.Link
 	var err error
-	n3iwfIPAddr := net.ParseIP(n3iwfContext.IPSecGatewayAddress).To4()
-	n3iwfIPAddrAndSubnet := net.IPNet{IP: n3iwfIPAddr, Mask: n3iwfContext.Subnet.Mask}
-	newXfrmiName := fmt.Sprintf("%s-default", n3iwfContext.XfrmIfaceName)
+	wagfIPAddr := net.ParseIP(wagfContext.IPSecGatewayAddress).To4()
+	wagfIPAddrAndSubnet := net.IPNet{IP: wagfIPAddr, Mask: wagfContext.Subnet.Mask}
+	newXfrmiName := fmt.Sprintf("%s-default", wagfContext.XfrmIfaceName)
 
-	if linkIPSec, err = xfrm.SetupIPsecXfrmi(newXfrmiName, n3iwfContext.XfrmParentIfaceName,
-		n3iwfContext.XfrmIfaceId, n3iwfIPAddrAndSubnet); err != nil {
+	if linkIPSec, err = xfrm.SetupIPsecXfrmi(newXfrmiName, wagfContext.XfrmParentIfaceName,
+		wagfContext.XfrmIfaceId, wagfIPAddrAndSubnet); err != nil {
 		logger.InitLog.Errorf("Setup XFRM interface %s fail: %+v", newXfrmiName, err)
 		return err
 	}
 
 	route := &netlink.Route{
 		LinkIndex: linkIPSec.Attrs().Index,
-		Dst:       n3iwfContext.Subnet,
+		Dst:       wagfContext.Subnet,
 	}
 
+	// Add new rule to linux OS
 	if err := netlink.RouteAdd(route); err != nil {
 		logger.InitLog.Warnf("netlink.RouteAdd: %+v", err)
 	}
 
 	logger.InitLog.Infof("Setup XFRM interface %s ", newXfrmiName)
 
-	n3iwfContext.XfrmIfaces.LoadOrStore(n3iwfContext.XfrmIfaceId, linkIPSec)
-	n3iwfContext.XfrmIfaceIdOffsetForUP = 1
+	wagfContext.XfrmIfaces.LoadOrStore(wagfContext.XfrmIfaceId, linkIPSec)
+	wagfContext.XfrmIfaceIdOffsetForUP = 1
 
 	return nil
 }
 
-func (a *N3iwfApp) RemoveIPsecInterfaces(n3iwfContext *n3iwf_context.N3IWFContext) {
-	n3iwfContext.XfrmIfaces.Range(
+func (wagf *wagf) RemoveIPsecInterfaces() {
+	wagfSelf := context.WAGFSelf()
+	wagfSelf.XfrmIfaces.Range(
 		func(key, value interface{}) bool {
 			iface := value.(netlink.Link)
 			if err := netlink.LinkDel(iface); err != nil {
@@ -205,21 +303,77 @@ func (a *N3iwfApp) RemoveIPsecInterfaces(n3iwfContext *n3iwf_context.N3IWFContex
 		})
 }
 
-func (a *N3iwfApp) Terminate(n3iwfContext *n3iwf_context.N3IWFContext) {
-	logger.InitLog.Info("Terminating N3IWF...")
-	logger.InitLog.Info("Deleting interfaces created by N3IWF")
-	a.RemoveIPsecInterfaces(n3iwfContext)
-	logger.InitLog.Info("N3IWF terminated")
+func (wagf *wagf) Terminate() {
+	logger.InitLog.Info("Terminating wagf...")
+	logger.InitLog.Info("Deleting interfaces created by wagf")
+	wagf.RemoveIPsecInterfaces()
+	logger.InitLog.Info("wagf terminated")
 }
 
-func StopServiceConn(n3iwfContext *n3iwf_context.N3IWFContext) {
-	logger.InitLog.Info("Stopping service created by N3IWF")
+func (wagf *wagf) Exec(c *cli.Context) error {
+	// wagf.Initialize(cfgPath, c)
 
-	ngap_service.Stop(n3iwfContext)
+	logger.InitLog.Traceln("args:", c.String("wagfcfg"))
+	args := wagf.FilterCli(c)
+	logger.InitLog.Traceln("filter: ", args)
+	command := exec.Command("./wagf", args...)
 
-	nwucp_service.Stop(n3iwfContext)
+	wg := sync.WaitGroup{}
+	wg.Add(3)
 
-	nwuup_service.Stop(n3iwfContext)
+	stdout, err := command.StdoutPipe()
+	if err != nil {
+		logger.InitLog.Fatalln(err)
+	}
+	go func() {
+		defer func() {
+			if p := recover(); p != nil {
+				// Print stack for panic to log. Fatalf() will let program exit.
+				logger.InitLog.Fatalf("panic: %v\n%s", p, string(debug.Stack()))
+			}
+		}()
 
-	ike_service.Stop(n3iwfContext)
+		in := bufio.NewScanner(stdout)
+		for in.Scan() {
+			fmt.Println(in.Text())
+		}
+		wg.Done()
+	}()
+
+	stderr, err := command.StderrPipe()
+	if err != nil {
+		logger.InitLog.Fatalln(err)
+	}
+	go func() {
+		defer func() {
+			if p := recover(); p != nil {
+				// Print stack for panic to log. Fatalf() will let program exit.
+				logger.InitLog.Fatalf("panic: %v\n%s", p, string(debug.Stack()))
+			}
+		}()
+
+		in := bufio.NewScanner(stderr)
+		for in.Scan() {
+			fmt.Println(in.Text())
+		}
+		wg.Done()
+	}()
+
+	go func() {
+		defer func() {
+			if p := recover(); p != nil {
+				// Print stack for panic to log. Fatalf() will let program exit.
+				logger.InitLog.Fatalf("panic: %v\n%s", p, string(debug.Stack()))
+			}
+		}()
+
+		if errCom := command.Start(); errCom != nil {
+			logger.InitLog.Errorf("wagf start error: %v", errCom)
+		}
+		wg.Done()
+	}()
+
+	wg.Wait()
+
+	return err
 }

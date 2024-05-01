@@ -4,12 +4,20 @@ import (
 	"net"
 	"runtime/debug"
 
-	"github.com/free5gc/n3iwf/internal/logger"
-	"github.com/free5gc/n3iwf/pkg/ike/handler"
-	ike_message "github.com/free5gc/n3iwf/pkg/ike/message"
+	"github.com/sirupsen/logrus"
+
+	"github.com/free5gc/wagf/internal/logger"
+	"github.com/free5gc/wagf/pkg/ike/handler"
+	ike_message "github.com/free5gc/wagf/pkg/ike/message"
 )
 
-func IkeDispatch(udpConn *net.UDPConn, localAddr, remoteAddr *net.UDPAddr, msg []byte) {
+var ikeLog *logrus.Entry
+
+func init() {
+	ikeLog = logger.IKELog
+}
+
+func Dispatch(udpConn *net.UDPConn, localAddr, remoteAddr *net.UDPAddr, msg []byte) {
 	defer func() {
 		if p := recover(); p != nil {
 			// Print stack for panic to log. Fatalf() will let program exit.
@@ -22,7 +30,7 @@ func IkeDispatch(udpConn *net.UDPConn, localAddr, remoteAddr *net.UDPAddr, msg [
 	if localAddr.Port == 4500 {
 		for i := 0; i < 4; i++ {
 			if msg[i] != 0 {
-				logger.IKELog.Warn(
+				ikeLog.Warn(
 					"Received an IKE packet that does not prepend 4 bytes zero from UDP port 4500," +
 						" this packet may be the UDP encapsulated ESP. The packet will not be handled.")
 				return
@@ -35,20 +43,18 @@ func IkeDispatch(udpConn *net.UDPConn, localAddr, remoteAddr *net.UDPAddr, msg [
 
 	err := ikeMessage.Decode(msg)
 	if err != nil {
-		logger.IKELog.Error(err)
+		ikeLog.Error(err)
 		return
 	}
 
 	switch ikeMessage.ExchangeType {
 	case ike_message.IKE_SA_INIT:
-		handler.HandleIKESAINIT(udpConn, localAddr, remoteAddr, ikeMessage, msg)
+		handler.HandleIKESAINIT(udpConn, localAddr, remoteAddr, ikeMessage)
 	case ike_message.IKE_AUTH:
 		handler.HandleIKEAUTH(udpConn, localAddr, remoteAddr, ikeMessage)
 	case ike_message.CREATE_CHILD_SA:
 		handler.HandleCREATECHILDSA(udpConn, localAddr, remoteAddr, ikeMessage)
-	case ike_message.INFORMATIONAL:
-		handler.HandleInformational(udpConn, localAddr, remoteAddr, ikeMessage)
 	default:
-		logger.IKELog.Warnf("Unimplemented IKE message type, exchange type: %d", ikeMessage.ExchangeType)
+		ikeLog.Warnf("Unimplemented IKE message type, exchange type: %d", ikeMessage.ExchangeType)
 	}
 }

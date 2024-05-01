@@ -1,94 +1,69 @@
 package main
 
 import (
+	"fmt"
 	"os"
-	"path/filepath"
 	"runtime/debug"
 
+	"github.com/asaskevich/govalidator"
 	"github.com/urfave/cli"
 
-	"github.com/free5gc/n3iwf/internal/logger"
-	"github.com/free5gc/n3iwf/pkg/factory"
-	"github.com/free5gc/n3iwf/pkg/service"
-	logger_util "github.com/free5gc/util/logger"
+	"github.com/free5gc/wagf/internal/logger"
+	"github.com/free5gc/wagf/pkg/service"
 	"github.com/free5gc/util/version"
 )
 
-var N3IWF *service.N3iwfApp
+var wagf = &service.wagf{}
 
 func main() {
 	defer func() {
 		if p := recover(); p != nil {
 			// Print stack for panic to log. Fatalf() will let program exit.
-			logger.MainLog.Fatalf("panic: %v\n%s", p, string(debug.Stack()))
+			logger.AppLog.Fatalf("panic: %v\n%s", p, string(debug.Stack()))
 		}
 	}()
 
 	app := cli.NewApp()
-	app.Name = "n3iwf"
-	app.Usage = "Non-3GPP Interworking Function (N3IWF)"
+	app.Name = "wagf"
+	app.Usage = "Trusted Non-3GPP Gateway Function (wagf)"
 	app.Action = action
-	app.Flags = []cli.Flag{
-		cli.StringFlag{
-			Name:  "config, c",
-			Usage: "Load configuration from `FILE`",
-		},
-		cli.StringSliceFlag{
-			Name:  "log, l",
-			Usage: "Output NF log to `FILE`",
-		},
-	}
+	app.Flags = wagf.GetCliCmd()
 	if err := app.Run(os.Args); err != nil {
-		logger.MainLog.Errorf("N3IWF Run Error: %v\n", err)
+		logger.AppLog.Errorf("wagf Run Error: %v\n", err)
 	}
 }
 
-func action(cliCtx *cli.Context) error {
-	tlsKeyLogPath, err := initLogFile(cliCtx.StringSlice("log"))
-	if err != nil {
+func action(c *cli.Context) error {
+	if err := initLogFile(c.String("log"), c.String("log5gc")); err != nil {
+		logger.AppLog.Errorf("%+v", err)
 		return err
 	}
 
-	logger.MainLog.Infoln("N3IWF version: ", version.GetVersion())
-
-	cfg, err := factory.ReadConfig(cliCtx.String("config"))
-	if err != nil {
-		return err
+	if err := wagf.Initialize(c); err != nil { 	// read yaml file and turn the params to struct
+		switch errType := err.(type) {
+		case govalidator.Errors:
+			validErrs := err.(govalidator.Errors).Errors()
+			for _, validErr := range validErrs {
+				logger.CfgLog.Errorf("%+v", validErr)
+			}
+		default:
+			logger.CfgLog.Errorf("%+v", errType)
+		}
+		logger.CfgLog.Errorf("[-- PLEASE REFER TO SAMPLE CONFIG FILE COMMENTS --]")
+		return fmt.Errorf("Failed to initialize !!")
 	}
-	factory.N3iwfConfig = cfg
 
-	n3iwf, err := service.NewApp(cfg)
-	if err != nil {
-		return err
-	}
-	N3IWF = n3iwf
+	logger.AppLog.Infoln(c.App.Name)
+	logger.AppLog.Infoln("wagf version: ", version.GetVersion())
 
-	n3iwf.Start(tlsKeyLogPath)
+	wagf.Start() // wagf server started!
 
 	return nil
 }
 
-func initLogFile(logNfPath []string) (string, error) {
-	logTlsKeyPath := ""
-
-	for _, path := range logNfPath {
-		if err := logger_util.LogFileHook(logger.Log, path); err != nil {
-			return "", err
-		}
-
-		if logTlsKeyPath != "" {
-			continue
-		}
-
-		nfDir, _ := filepath.Split(path)
-		tmpDir := filepath.Join(nfDir, "key")
-		if err := os.MkdirAll(tmpDir, 0o775); err != nil {
-			logger.InitLog.Errorf("Make directory %s failed: %+v", tmpDir, err)
-			return "", err
-		}
-		_, name := filepath.Split(factory.N3iwfDefaultTLSKeyLogPath)
-		logTlsKeyPath = filepath.Join(tmpDir, name)
+func initLogFile(logNfPath, log5gcPath string) error {
+	if err := logger.LogFileHook(logNfPath, log5gcPath); err != nil {
+		return err
 	}
-
-	return logTlsKeyPath, nil
+	return nil
 }
