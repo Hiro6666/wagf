@@ -24,14 +24,14 @@ import (
 	nwtup_service "github.com/free5gc/wagf/internal/nwtup/service"
 	"github.com/free5gc/wagf/internal/util"
 	"github.com/free5gc/wagf/pkg/context"
+	dhcp_service "github.com/free5gc/wagf/pkg/dhcp/service"
 	"github.com/free5gc/wagf/pkg/factory"
 	ike_service "github.com/free5gc/wagf/pkg/ike/service"
 	"github.com/free5gc/wagf/pkg/ike/xfrm"
 	radius_service "github.com/free5gc/wagf/pkg/radius/service"
-	dhcp_service "github.com/free5gc/wagf/pkg/dhcp/service"
 )
 
-type wagf struct{}
+type WAGF struct{}
 
 type (
 	// Commands information.
@@ -57,11 +57,11 @@ var cliCmd = []cli.Flag{
 	},
 }
 
-func (*wagf) GetCliCmd() (flags []cli.Flag) {
+func (*WAGF) GetCliCmd() (flags []cli.Flag) {
 	return cliCmd
 }
 
-func (wagf *wagf) Initialize(c *cli.Context) error {
+func (wagf *WAGF) Initialize(c *cli.Context) error {
 	commands = Commands{
 		config: c.String("config"),
 	}
@@ -94,18 +94,18 @@ func (wagf *wagf) Initialize(c *cli.Context) error {
 // set log level
 // DebugLevel: how detailed to output, value: trace, debug, info, warn, error, fatal, panic
 // ReportCaller: enable the caller report or not, value: true or false
-func (wagf *wagf) SetLogLevel() {
+func (wagf *WAGF) SetLogLevel() {
 	if factory.WagfConfig.Logger == nil {
 		logger.InitLog.Warnln("wagf config without log level setting!!!")
 		return
 	}
 
-	if factory.WagfConfig.Logger.wagf != nil {
+	if factory.WagfConfig.Logger.WAGF != nil {
 		// Set DebugLevel, default: infolevel
-		if factory.WagfConfig.Logger.wagf.DebugLevel != "" {
-			if level, err := logrus.ParseLevel(factory.WagfConfig.Logger.wagf.DebugLevel); err != nil {
+		if factory.WagfConfig.Logger.WAGF.DebugLevel != "" {
+			if level, err := logrus.ParseLevel(factory.WagfConfig.Logger.WAGF.DebugLevel); err != nil {
 				logger.InitLog.Warnf("wagf Log level [%s] is invalid, set to [info] level",
-					factory.WagfConfig.Logger.wagf.DebugLevel)
+					factory.WagfConfig.Logger.WAGF.DebugLevel)
 				logger.SetLogLevel(logrus.InfoLevel)
 			} else {
 				logger.InitLog.Infof("wagf Log level is set to [%s] level", level)
@@ -116,7 +116,7 @@ func (wagf *wagf) SetLogLevel() {
 			logger.SetLogLevel(logrus.InfoLevel)
 		}
 		// Set report caller
-		logger.SetReportCaller(factory.WagfConfig.Logger.wagf.ReportCaller)
+		logger.SetReportCaller(factory.WagfConfig.Logger.WAGF.ReportCaller)
 	}
 
 	if factory.WagfConfig.Logger.NGAP != nil {
@@ -152,7 +152,7 @@ func (wagf *wagf) SetLogLevel() {
 	}
 }
 
-func (wagf *wagf) FilterCli(c *cli.Context) (args []string) {
+func (wagf *WAGF) FilterCli(c *cli.Context) (args []string) {
 	for _, flag := range wagf.GetCliCmd() {
 		name := flag.GetName()
 		value := fmt.Sprint(c.Generic(name))
@@ -165,7 +165,7 @@ func (wagf *wagf) FilterCli(c *cli.Context) (args []string) {
 	return args
 }
 
-func (wagf *wagf) Start() {
+func (wagf *WAGF) Start() {
 	logger.InitLog.Infoln("Server started")
 
 	// set wagf basic info
@@ -254,7 +254,7 @@ func (wagf *wagf) Start() {
 	wg.Wait()
 }
 
-func (wagf *wagf) InitDefaultXfrmInterface() error {
+func (wagf *WAGF) InitDefaultXfrmInterface() error {
 	wagfContext := context.WAGFSelf()
 	fmt.Println("in my init.go wagfContext", &wagfContext)
 
@@ -289,7 +289,7 @@ func (wagf *wagf) InitDefaultXfrmInterface() error {
 	return nil
 }
 
-func (wagf *wagf) RemoveIPsecInterfaces() {
+func (wagf *WAGF) RemoveIPsecInterfaces() {
 	wagfSelf := context.WAGFSelf()
 	wagfSelf.XfrmIfaces.Range(
 		func(key, value interface{}) bool {
@@ -303,14 +303,14 @@ func (wagf *wagf) RemoveIPsecInterfaces() {
 		})
 }
 
-func (wagf *wagf) Terminate() {
+func (wagf *WAGF) Terminate() {
 	logger.InitLog.Info("Terminating wagf...")
 	logger.InitLog.Info("Deleting interfaces created by wagf")
 	wagf.RemoveIPsecInterfaces()
 	logger.InitLog.Info("wagf terminated")
 }
 
-func (wagf *wagf) Exec(c *cli.Context) error {
+func (wagf *WAGF) Exec(c *cli.Context) error {
 	// wagf.Initialize(cfgPath, c)
 
 	logger.InitLog.Traceln("args:", c.String("wagfcfg"))

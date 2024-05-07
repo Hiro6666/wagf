@@ -9,8 +9,8 @@ import (
 
 	"github.com/asaskevich/govalidator"
 
-	"github.com/free5gc/wagf/pkg/context"
 	logger_util "github.com/free5gc/util/logger"
+	"github.com/free5gc/wagf/pkg/context"
 )
 
 const (
@@ -57,13 +57,13 @@ func (i *Info) validate() (bool, error) {
 }
 
 type Configuration struct {
-	WAGFInfo        context.WAGFNFInfo        `yaml:"WAGFInformation" valid:"required"`
+	WAGFInfo         context.WAGFNFInfo         `yaml:"WAGFInformation" valid:"required"`
 	AMFSCTPAddresses []context.AMFSCTPAddresses `yaml:"AMFSCTPAddresses" valid:"required"`
 
 	TCPPort              uint16 `yaml:"NASTCPPort" valid:"port,required"`
 	IKEBindAddr          string `yaml:"IKEBindAddress" valid:"host,required"`
 	RadiusBindAddr       string `yaml:"RadiusBindAddress" valid:"host,required"`
-	DHCPBindAddr		 string `yaml:"DHCPBindAddress" valid:"host,required"`
+	DHCPBindAddr         string `yaml:"DHCPBindAddress" valid:"host,required"`
 	IPSecGatewayAddr     string `yaml:"IPSecTunnelAddress" valid:"host,required"`
 	UEIPAddressRange     string `yaml:"UEIPAddressRange" valid:"cidr,required"`                // e.g. 10.0.1.0/24
 	XfrmIfaceName        string `yaml:"XFRMInterfaceName" valid:"stringlength(1|10),optional"` // must != 0

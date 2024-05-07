@@ -8,12 +8,12 @@ import (
 	"github.com/asaskevich/govalidator"
 	"github.com/urfave/cli"
 
+	"github.com/free5gc/util/version"
 	"github.com/free5gc/wagf/internal/logger"
 	"github.com/free5gc/wagf/pkg/service"
-	"github.com/free5gc/util/version"
 )
 
-var wagf = &service.wagf{}
+var wagf = &service.WAGF{}
 
 func main() {
 	defer func() {
@@ -25,7 +25,7 @@ func main() {
 
 	app := cli.NewApp()
 	app.Name = "wagf"
-	app.Usage = "Trusted Non-3GPP Gateway Function (wagf)"
+	app.Usage = "Wireline Access Gateway Function (WAGF)"
 	app.Action = action
 	app.Flags = wagf.GetCliCmd()
 	if err := app.Run(os.Args); err != nil {
@@ -39,7 +39,7 @@ func action(c *cli.Context) error {
 		return err
 	}
 
-	if err := wagf.Initialize(c); err != nil { 	// read yaml file and turn the params to struct
+	if err := wagf.Initialize(c); err != nil { // read yaml file and turn the params to struct
 		switch errType := err.(type) {
 		case govalidator.Errors:
 			validErrs := err.(govalidator.Errors).Errors()
