@@ -15,9 +15,9 @@ import (
 	"golang.org/x/net/ipv4"
 
 	"github.com/free5gc/ngap/ngapType"
+	"github.com/free5gc/util/idgenerator"
 	"github.com/free5gc/wagf/internal/logger"
 	"github.com/free5gc/wagf/pkg/factoryN5CW"
-	"github.com/free5gc/util/idgenerator"
 )
 
 var contextLog *logrus.Entry
@@ -67,7 +67,7 @@ type WAGFContext struct {
 	// wagf local address
 	IKEBindAddress      string
 	RadiusBindAddress   string
-	DHCPBindAddress		string
+	DHCPBindAddress     string
 	IPSecGatewayAddress string
 	GTPBindAddress      string
 	TCPPort             uint16
@@ -88,7 +88,7 @@ func init() {
 	wagfContext.RANUENGAPIDGenerator = idgenerator.NewGenerator(0, math.MaxInt64)
 	wagfContext.TEIDGenerator = idgenerator.NewGenerator(1, math.MaxUint32)
 
-	if err := factoryN5CW.InitConfigFactory("./config/default_ue.yaml"); err != nil {
+	if err := factoryN5CW.InitConfigFactory("./config/wagfcfg.yaml"); err != nil {
 		contextLog.Errorf("factoryN5CW.InitConfigFactory: %+v", err)
 	}
 	if _, err := factoryN5CW.N5cwConfig.Validate(); err != nil {

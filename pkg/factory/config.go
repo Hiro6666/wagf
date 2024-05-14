@@ -10,11 +10,12 @@ import (
 	"github.com/asaskevich/govalidator"
 
 	logger_util "github.com/free5gc/util/logger"
+	"github.com/free5gc/wagf/internal/logger"
 	"github.com/free5gc/wagf/pkg/context"
 )
 
 const (
-	WagfExpectedConfigVersion = "1.0.3"
+	WagfExpectedConfigVersion = "1.0.1"
 )
 
 type Config struct {
@@ -82,11 +83,10 @@ func (c *Configuration) validate() (bool, error) {
 			return result, err
 		}
 	}
-
 	govalidator.TagMap["cidr"] = govalidator.Validator(func(str string) bool {
 		return govalidator.IsCIDR(str)
 	})
-
+	logger.CfgLog.Errorf("step1")
 	result, err := govalidator.ValidateStruct(c)
 	return result, appendInvalid(err)
 }

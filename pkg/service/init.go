@@ -76,7 +76,6 @@ func (wagf *WAGF) Initialize(c *cli.Context) error {
 			return err
 		}
 	}
-
 	wagf.SetLogLevel()
 
 	if err := factory.CheckConfigVersion(); err != nil {

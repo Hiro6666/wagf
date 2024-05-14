@@ -6,9 +6,9 @@ import (
 	"math/bits"
 	"reflect"
 
-	"github.com/free5gc/wagf/internal/logger"
 	"github.com/asaskevich/govalidator"
 	"github.com/davecgh/go-spew/spew"
+	"github.com/free5gc/wagf/internal/logger"
 	"github.com/sirupsen/logrus"
 )
 

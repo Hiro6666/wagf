@@ -24,17 +24,18 @@ func main() {
 	}()
 
 	app := cli.NewApp()
-	app.Name = "wagf"
+	app.Name = "WAGF"
 	app.Usage = "Wireline Access Gateway Function (WAGF)"
 	app.Action = action
 	app.Flags = wagf.GetCliCmd()
 	if err := app.Run(os.Args); err != nil {
-		logger.AppLog.Errorf("wagf Run Error: %v\n", err)
+		logger.AppLog.Errorf("WAGF Run Error: %v\n", err)
 	}
 }
 
 func action(c *cli.Context) error {
-	if err := initLogFile(c.String("log"), c.String("log5gc")); err != nil {
+	// if err := initLogFile(c.String("log"), c.String("log5gc")); err != nil {
+	if err := initLogFile(c.String("log"), "log5gc.log"); err != nil {
 		logger.AppLog.Errorf("%+v", err)
 		return err
 	}
@@ -61,7 +62,7 @@ func action(c *cli.Context) error {
 	return nil
 }
 
-func initLogFile(logNfPath, log5gcPath string) error {
+func initLogFile(logNfPath string, log5gcPath string) error {
 	if err := logger.LogFileHook(logNfPath, log5gcPath); err != nil {
 		return err
 	}

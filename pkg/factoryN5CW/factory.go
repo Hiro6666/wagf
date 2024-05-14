@@ -17,6 +17,7 @@ var filePath string
 func InitConfigFactory(f string) error {
 	filePath = f
 	if content, err := ioutil.ReadFile(filePath); err != nil {
+		fmt.Println("read file error")
 		return err
 	} else {
 		N5cwConfig = Config{}
@@ -24,7 +25,6 @@ func InitConfigFactory(f string) error {
 		if yamlErr := yaml.Unmarshal(content, &N5cwConfig); yamlErr != nil {
 			return yamlErr
 		}
-
 		if err := checkConfigVersion(); err != nil {
 			logger.CfgLog.Errorf("Init Config Fail: %+v", err)
 		}
