@@ -17,7 +17,7 @@ var filePath string
 func InitConfigFactory(f string) error {
 	filePath = f
 	if content, err := ioutil.ReadFile(filePath); err != nil {
-		fmt.Println("read file error")
+		logger.CfgLog.Errorf("read file error")
 		return err
 	} else {
 		N5cwConfig = Config{}
@@ -28,10 +28,8 @@ func InitConfigFactory(f string) error {
 		if err := checkConfigVersion(); err != nil {
 			logger.CfgLog.Errorf("Init Config Fail: %+v", err)
 		}
-
 		N5cwConfig.SetLogLevel()
 	}
-
 	return nil
 }
 

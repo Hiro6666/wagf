@@ -64,8 +64,8 @@ func (i *Info) validate() (bool, error) {
 }
 
 type Configuration struct {
-	N3IWFInfo N3IWFInfo `yaml:"N3IWFInformation" valid:"required"`
-	N5CWInfo  N5CWInfo  `yaml:"N5CWInformation" valid:"required"`
+	WAGFInfo WAGFInfo `yaml:"WAGFInformation" valid:"required"`
+	N5CWInfo N5CWInfo `yaml:"N5CWInformation" valid:"required"`
 }
 
 func (c *Configuration) validate() (bool, error) {
@@ -112,7 +112,7 @@ func (l *LogSetting) validate() (bool, error) {
 	return result, err
 }
 
-type N3IWFInfo struct {
+type WAGFInfo struct {
 	IPSecIfaceAddr string `yaml:"IPSecIfaceAddr" valid:"host,required"`
 	IPsecInnerAddr string `yaml:"IPsecInnerAddr" valid:"host,required"`
 }

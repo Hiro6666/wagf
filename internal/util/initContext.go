@@ -90,7 +90,7 @@ func InitWAGFContext() bool {
 	if factory.WagfConfig.Configuration.DHCPBindAddr == "" {
 		contextLog.Error("DHCP bind address is empty")
 		return false
-	}else {
+	} else {
 		wagfContext.DHCPBindAddress = factory.WagfConfig.Configuration.DHCPBindAddr
 	}
 

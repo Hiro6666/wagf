@@ -174,10 +174,10 @@ func (wagf *WAGF) Start() {
 	}
 
 	// create XFRM interface
-	if err := wagf.InitDefaultXfrmInterface(); err != nil {
-		logger.InitLog.Errorf("Initicating XFRM interface for control plane failed: %+v", err)
-		return
-	}
+	// if err := wagf.InitDefaultXfrmInterface(); err != nil {
+	// 	logger.InitLog.Errorf("Initicating XFRM interface for control plane failed: %+v", err)
+	// 	return
+	// }
 
 	// Graceful Shutdown
 	signalChannel := make(chan os.Signal, 1)
