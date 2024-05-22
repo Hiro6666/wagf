@@ -66,10 +66,10 @@ require (
 	google.golang.org/protobuf v1.33.0 // indirect
 )
 
-replace github.com/free5gc/ngap => /home/parker/Desktop/free5gc_hiro/free5gc/ngap
+replace github.com/free5gc/ngap => /home/nems-44/Desktop/free5gc_hiro/free5gc/ngap
 
-replace github.com/free5gc/util => /home/parker/Desktop/free5gc_hiro/free5gc/util
+replace github.com/free5gc/util => /home/nems-44/Desktop/free5gc_hiro/free5gc/util
 
-replace github.com/free5gc/openapi => /home/parker/Desktop/free5gc_hiro/free5gc/openapi
+replace github.com/free5gc/openapi => /home/nems-44/Desktop/free5gc_hiro/free5gc/openapi
 
-replace github.com/free5gc/wagf => /home/parker/Desktop/free5gc_hiro/free5gc/NFs/wagf
+replace github.com/free5gc/wagf => /home/nems-44/Desktop/free5gc_hiro/free5gc/NFs/wagf

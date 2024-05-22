@@ -23,8 +23,8 @@ import (
 	"github.com/free5gc/nas/nasType"
 	"github.com/free5gc/nas/security"
 	"github.com/free5gc/ngap/ngapType"
-	gmm_message "github.com/free5gc/wagf/internal/gmm/message"
 	"github.com/free5gc/openapi/models"
+	gmm_message "github.com/free5gc/wagf/internal/gmm/message"
 	"github.com/free5gc/wagf/pkg/factoryN5CW"
 )
 
@@ -176,6 +176,7 @@ func HandleRadiusAccessRequest(udpConn *net.UDPConn, wagfAddr, ueAddr *net.UDPAd
 		session.PktId = message.PktID
 		ue.RadiusSession = session
 		ue.AMF = selectedAMF
+		radiusLog.Infof("nai Name: %s", nai)
 		r := regexp.MustCompile(`type(\d)\.rid([0-9]+)\.schid0\.userid([0-9]+)`)
 		reRes := r.FindStringSubmatch(nai)
 		rid, _ := strconv.Atoi(reRes[2])

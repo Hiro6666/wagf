@@ -1,13 +1,13 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"net"
-	"errors"
 	"runtime/debug"
-	
+
 	"github.com/sirupsen/logrus"
-	
+
 	"github.com/free5gc/wagf/internal/logger"
 	// "github.com/free5gc/wagf/pkg/context"
 	"github.com/free5gc/wagf/pkg/dhcp"
@@ -30,7 +30,6 @@ func Run() error {
 		dhcpLog.Errorf("Resolve UDP address failed: %+v", err)
 		return errors.New("DHCP service run failed")
 	}
-
 
 	// Listen and serve
 	// var errChan chan error
@@ -63,7 +62,7 @@ func listenAndServe(localAddr *net.UDPAddr, errChan chan<- error) {
 	// }
 
 	close(errChan)
-	listener, err := NewIPv4UDPConn("ens37", localAddr)
+	listener, err := NewIPv4UDPConn("enp2s0", localAddr)
 	if err != nil {
 		dhcpLog.Errorf("NewIPv4UDPConn failed: %+v", err)
 		return

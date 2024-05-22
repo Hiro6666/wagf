@@ -42,19 +42,19 @@ func init() {
 		FieldsOrder:     []string{"component", "category"},
 	}
 
-	AppLog = log.WithFields(logrus.Fields{"component": "wagf", "category": "App"})
-	InitLog = log.WithFields(logrus.Fields{"component": "wagf", "category": "Init"})
-	CfgLog = log.WithFields(logrus.Fields{"component": "wagf", "category": "CFG"})
-	ContextLog = log.WithFields(logrus.Fields{"component": "wagf", "category": "Context"})
-	NgapLog = log.WithFields(logrus.Fields{"component": "wagf", "category": "NGAP"})
-	IKELog = log.WithFields(logrus.Fields{"component": "wagf", "category": "IKE"})
-	RadiusLog = log.WithFields(logrus.Fields{"component": "wagf", "category": "Radius"})
-	GTPLog = log.WithFields(logrus.Fields{"component": "wagf", "category": "GTP"})
-	NWtCPLog = log.WithFields(logrus.Fields{"component": "wagf", "category": "NWtCP"})
-	NWtUPLog = log.WithFields(logrus.Fields{"component": "wagf", "category": "NWtUP"})
-	RelayLog = log.WithFields(logrus.Fields{"component": "wagf", "category": "Relay"})
-	UtilLog = log.WithFields(logrus.Fields{"component": "wagf", "category": "Util"})
-	DHCPLog = log.WithFields(logrus.Fields{"component": "wagf", "category": "DHCP"})
+	AppLog = log.WithFields(logrus.Fields{"component": "WAGF", "category": "App"})
+	InitLog = log.WithFields(logrus.Fields{"component": "WAGF", "category": "Init"})
+	CfgLog = log.WithFields(logrus.Fields{"component": "WAGF", "category": "CFG"})
+	ContextLog = log.WithFields(logrus.Fields{"component": "WAGF", "category": "Context"})
+	NgapLog = log.WithFields(logrus.Fields{"component": "WAGF", "category": "NGAP"})
+	IKELog = log.WithFields(logrus.Fields{"component": "WAGF", "category": "IKE"})
+	RadiusLog = log.WithFields(logrus.Fields{"component": "WAGF", "category": "Radius"})
+	GTPLog = log.WithFields(logrus.Fields{"component": "WAGF", "category": "GTP"})
+	NWtCPLog = log.WithFields(logrus.Fields{"component": "WAGF", "category": "NWtCP"})
+	NWtUPLog = log.WithFields(logrus.Fields{"component": "WAGF", "category": "NWtUP"})
+	RelayLog = log.WithFields(logrus.Fields{"component": "WAGF", "category": "Relay"})
+	UtilLog = log.WithFields(logrus.Fields{"component": "WAGF", "category": "Util"})
+	DHCPLog = log.WithFields(logrus.Fields{"component": "WAGF", "category": "DHCP"})
 }
 
 func LogFileHook(logNfPath string, log5gcPath string) error {

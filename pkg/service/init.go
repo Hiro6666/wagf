@@ -248,7 +248,7 @@ func (wagf *WAGF) Start() {
 	logger.InitLog.Info("DHCP service running.")
 	wg.Add(1)
 
-	logger.InitLog.Info("wagf running...")
+	logger.InitLog.Info("WAGF running...")
 
 	wg.Wait()
 }

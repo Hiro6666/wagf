@@ -42,7 +42,7 @@ func init() {
 }
 
 func HandleNGSetupResponse(sctpAddr string, conn *sctp.SCTPConn, message *ngapType.NGAPPDU) {
-	ngapLog.Infoln("[wagf] Handle NG Setup Response")
+	ngapLog.Infoln("[WAGF] Handle NG Setup Response")
 
 	var amfName *ngapType.AMFName
 	var servedGUAMIList *ngapType.ServedGUAMIList
@@ -151,7 +151,7 @@ func HandleNGSetupResponse(sctpAddr string, conn *sctp.SCTPConn, message *ngapTy
 }
 
 func HandleNGSetupFailure(sctpAddr string, conn *sctp.SCTPConn, message *ngapType.NGAPPDU) {
-	ngapLog.Infoln("[wagf] Handle NG Setup Failure")
+	ngapLog.Infoln("[WAGF] Handle NG Setup Failure")
 
 	// var cause *ngapType.Cause
 	// var timeToWait *ngapType.TimeToWait
@@ -255,7 +255,7 @@ func HandleNGSetupFailure(sctpAddr string, conn *sctp.SCTPConn, message *ngapTyp
 }
 
 func HandleNGReset(amf *context.WAGFAMF, message *ngapType.NGAPPDU) {
-	ngapLog.Infoln("[wagf] Handle NG Reset")
+	ngapLog.Infoln("[WAGF] Handle NG Reset")
 
 	// var cause *ngapType.Cause
 	// var resetType *ngapType.ResetType
@@ -362,7 +362,7 @@ func HandleNGReset(amf *context.WAGFAMF, message *ngapType.NGAPPDU) {
 }
 
 func HandleNGResetAcknowledge(amf *context.WAGFAMF, message *ngapType.NGAPPDU) {
-	ngapLog.Infoln("[wagf] Handle NG Reset Acknowledge")
+	ngapLog.Infoln("[WAGF] Handle NG Reset Acknowledge")
 
 	// var uEAssociatedLogicalNGConnectionList *ngapType.UEAssociatedLogicalNGConnectionList
 	// var criticalityDiagnostics *ngapType.CriticalityDiagnostics
@@ -427,7 +427,7 @@ func HandleNGResetAcknowledge(amf *context.WAGFAMF, message *ngapType.NGAPPDU) {
 // 4. check each protocol IE if exists
 // 5. get wagfUE by RANUENGAPID & AMFUENGAPID
 func HandleInitialContextSetupRequest(amf *context.WAGFAMF, message *ngapType.NGAPPDU) {
-	ngapLog.Infoln("[wagf] Handle Initial Context Setup Request")
+	ngapLog.Infoln("[WAGF] Handle Initial Context Setup Request")
 	// these vars are in TS38413 9.2.2.1
 	var amfUeNgapID *ngapType.AMFUENGAPID
 	var ranUeNgapID *ngapType.RANUENGAPID
@@ -1000,7 +1000,7 @@ func handlePDUSessionResourceSetupRequestTransfer(ue *context.WAGFUe, pduSession
 }
 
 func HandleUEContextModificationRequest(amf *context.WAGFAMF, message *ngapType.NGAPPDU) {
-	ngapLog.Infoln("[wagf] Handle UE Context Modification Request")
+	ngapLog.Infoln("[WAGF] Handle UE Context Modification Request")
 
 	// if amf == nil {
 	// 	ngapLog.Error("Corresponding AMF context not found")
@@ -1131,7 +1131,7 @@ func HandleUEContextModificationRequest(amf *context.WAGFAMF, message *ngapType.
 }
 
 func HandleUEContextReleaseCommand(amf *context.WAGFAMF, message *ngapType.NGAPPDU) {
-	ngapLog.Infoln("[wagf] Handle UE Context Release Command")
+	ngapLog.Infoln("[WAGF] Handle UE Context Release Command")
 
 	// if amf == nil {
 	// 	ngapLog.Error("Corresponding AMF context not found")
@@ -1227,7 +1227,7 @@ func encapNasMsgToEnvelope(nasPDU *ngapType.NASPDU) []byte {
 }
 
 func HandleDownlinkNASTransport(amf *context.WAGFAMF, message *ngapType.NGAPPDU) {
-	ngapLog.Infoln("[wagf] Handle Downlink NAS Transport")
+	ngapLog.Infoln("[WAGF] Handle Downlink NAS Transport")
 
 	if amf == nil {
 		ngapLog.Error("Corresponding AMF context not found")
@@ -1480,7 +1480,7 @@ func HandleDownlinkNASTransport(amf *context.WAGFAMF, message *ngapType.NGAPPDU)
 }
 
 func HandlePDUSessionResourceSetupRequest(amf *context.WAGFAMF, message *ngapType.NGAPPDU) {
-	ngapLog.Infoln("[wagf] Handle PDU Session Resource Setup Request")
+	ngapLog.Infoln("[WAGF] Handle PDU Session Resource Setup Request")
 
 	if amf == nil {
 		ngapLog.Error("Corresponding AMF context not found")
@@ -1790,7 +1790,7 @@ func HandlePDUSessionResourceSetupRequest(amf *context.WAGFAMF, message *ngapTyp
 }
 
 func HandlePDUSessionResourceModifyRequest(amf *context.WAGFAMF, message *ngapType.NGAPPDU) {
-	ngapLog.Infoln("[wagf] Handle PDU Session Resource Modify Request")
+	ngapLog.Infoln("[WAGF] Handle PDU Session Resource Modify Request")
 
 	// if amf == nil {
 	// 	ngapLog.Error("Corresponding AMF context not found")
@@ -1920,7 +1920,7 @@ func HandlePDUSessionResourceModifyRequest(amf *context.WAGFAMF, message *ngapTy
 func handlePDUSessionResourceModifyRequestTransfer(
 	pduSession *context.PDUSession, transfer ngapType.PDUSessionResourceModifyRequestTransfer) (
 	success bool, responseTransfer []byte) {
-	ngapLog.Trace("[wagf] Handle PDU Session Resource Modify Request Transfer")
+	ngapLog.Trace("[WAGF] Handle PDU Session Resource Modify Request Transfer")
 
 	// var pduSessionAMBR *ngapType.PDUSessionAggregateMaximumBitRate
 	// var ulNGUUPTNLModifyList *ngapType.ULNGUUPTNLModifyList
@@ -2071,7 +2071,7 @@ func handlePDUSessionResourceModifyRequestTransfer(
 }
 
 func HandlePDUSessionResourceModifyConfirm(amf *context.WAGFAMF, message *ngapType.NGAPPDU) {
-	ngapLog.Infoln("[wagf] Handle PDU Session Resource Modify Confirm")
+	ngapLog.Infoln("[WAGF] Handle PDU Session Resource Modify Confirm")
 
 	// var aMFUENGAPID *ngapType.AMFUENGAPID
 	// var rANUENGAPID *ngapType.RANUENGAPID
@@ -2199,7 +2199,7 @@ func HandlePDUSessionResourceModifyConfirm(amf *context.WAGFAMF, message *ngapTy
 }
 
 func HandlePDUSessionResourceReleaseCommand(amf *context.WAGFAMF, message *ngapType.NGAPPDU) {
-	ngapLog.Infoln("[wagf] Handle PDU Session Resource Release Command")
+	ngapLog.Infoln("[WAGF] Handle PDU Session Resource Release Command")
 	// var aMFUENGAPID *ngapType.AMFUENGAPID
 	// var rANUENGAPID *ngapType.RANUENGAPID
 	// // var rANPagingPriority *ngapType.RANPagingPriority
@@ -2328,7 +2328,7 @@ func HandlePDUSessionResourceReleaseCommand(amf *context.WAGFAMF, message *ngapT
 }
 
 func HandleErrorIndication(amf *context.WAGFAMF, message *ngapType.NGAPPDU) {
-	ngapLog.Infoln("[wagf] Handle Error Indication")
+	ngapLog.Infoln("[WAGF] Handle Error Indication")
 
 	// var aMFUENGAPID *ngapType.AMFUENGAPID
 	// var rANUENGAPID *ngapType.RANUENGAPID
@@ -2399,7 +2399,7 @@ func HandleErrorIndication(amf *context.WAGFAMF, message *ngapType.NGAPPDU) {
 }
 
 func HandleUERadioCapabilityCheckRequest(amf *context.WAGFAMF, message *ngapType.NGAPPDU) {
-	ngapLog.Infoln("[wagf] Handle UE Radio Capability Check Request")
+	ngapLog.Infoln("[WAGF] Handle UE Radio Capability Check Request")
 	// var aMFUENGAPID *ngapType.AMFUENGAPID
 	// var rANUENGAPID *ngapType.RANUENGAPID
 	// var uERadioCapability *ngapType.UERadioCapability
@@ -2477,7 +2477,7 @@ func HandleUERadioCapabilityCheckRequest(amf *context.WAGFAMF, message *ngapType
 }
 
 func HandleAMFConfigurationUpdate(amf *context.WAGFAMF, message *ngapType.NGAPPDU) {
-	ngapLog.Infoln("[wagf] Handle AMF Configuration Updaet")
+	ngapLog.Infoln("[WAGF] Handle AMF Configuration Updaet")
 
 	// var aMFName *ngapType.AMFName
 	// var servedGUAMIList *ngapType.ServedGUAMIList
@@ -2597,7 +2597,7 @@ func HandleAMFConfigurationUpdate(amf *context.WAGFAMF, message *ngapType.NGAPPD
 }
 
 func HandleRANConfigurationUpdateAcknowledge(amf *context.WAGFAMF, message *ngapType.NGAPPDU) {
-	ngapLog.Infoln("[wagf] Handle RAN Configuration Update Acknowledge")
+	ngapLog.Infoln("[WAGF] Handle RAN Configuration Update Acknowledge")
 
 	// var criticalityDiagnostics *ngapType.CriticalityDiagnostics
 
@@ -2637,7 +2637,7 @@ func HandleRANConfigurationUpdateAcknowledge(amf *context.WAGFAMF, message *ngap
 }
 
 func HandleRANConfigurationUpdateFailure(amf *context.WAGFAMF, message *ngapType.NGAPPDU) {
-	ngapLog.Infoln("[wagf] Handle RAN Configuration Update Failure")
+	ngapLog.Infoln("[WAGF] Handle RAN Configuration Update Failure")
 
 	// var cause *ngapType.Cause
 	// var timeToWait *ngapType.TimeToWait
@@ -2721,27 +2721,27 @@ func HandleRANConfigurationUpdateFailure(amf *context.WAGFAMF, message *ngapType
 }
 
 func HandleDownlinkRANConfigurationTransfer(message *ngapType.NGAPPDU) {
-	ngapLog.Infoln("[wagf] Handle Downlink RAN Configuration Transfer")
+	ngapLog.Infoln("[WAGF] Handle Downlink RAN Configuration Transfer")
 }
 
 func HandleDownlinkRANStatusTransfer(message *ngapType.NGAPPDU) {
-	ngapLog.Infoln("[wagf] Handle Downlink RAN Status Transfer")
+	ngapLog.Infoln("[WAGF] Handle Downlink RAN Status Transfer")
 }
 
 func HandleAMFStatusIndication(message *ngapType.NGAPPDU) {
-	ngapLog.Infoln("[wagf] Handle AMF Status Indication")
+	ngapLog.Infoln("[WAGF] Handle AMF Status Indication")
 }
 
 func HandleLocationReportingControl(message *ngapType.NGAPPDU) {
-	ngapLog.Infoln("[wagf] Handle Location Reporting Control")
+	ngapLog.Infoln("[WAGF] Handle Location Reporting Control")
 }
 
 func HandleUETNLAReleaseRequest(message *ngapType.NGAPPDU) {
-	ngapLog.Infoln("[wagf] Handle UE TNLA Release Request")
+	ngapLog.Infoln("[WAGF] Handle UE TNLA Release Request")
 }
 
 func HandleOverloadStart(amf *context.WAGFAMF, message *ngapType.NGAPPDU) {
-	ngapLog.Infoln("[wagf] Handle Overload Start")
+	ngapLog.Infoln("[WAGF] Handle Overload Start")
 
 	// var aMFOverloadResponse *ngapType.OverloadResponse
 	// var aMFTrafficLoadReductionIndication *ngapType.TrafficLoadReductionIndication
@@ -2787,7 +2787,7 @@ func HandleOverloadStart(amf *context.WAGFAMF, message *ngapType.NGAPPDU) {
 }
 
 func HandleOverloadStop(amf *context.WAGFAMF, message *ngapType.NGAPPDU) {
-	ngapLog.Infoln("[wagf] Handle Overload Stop")
+	ngapLog.Infoln("[WAGF] Handle Overload Stop")
 
 	// if amf == nil {
 	// 	ngapLog.Error("AMF Context is nil")
